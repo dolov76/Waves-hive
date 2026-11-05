@@ -1,0 +1,33 @@
+{
+  "name": "Hive Threads",
+  "short_name": "Hive Threads",
+  "description": "Хвилі Hive: стрічка, запис, відповіді, сповіщення, статистика",
+  "lang": "uk",
+  "id": "./hive-threads.html",
+  "start_url": "./hive-threads.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101010",
+  "theme_color": "#101010",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

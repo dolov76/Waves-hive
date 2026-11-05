@@ -1,0 +1,33 @@
+{
+  "name": "Hive: пости й коментарі",
+  "short_name": "Hive пости",
+  "description": "Публікація постів Hive, коментарі, сповіщення й статистика",
+  "lang": "uk",
+  "id": "./hive-post.html",
+  "start_url": "./hive-post.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14171c",
+  "theme_color": "#14171c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

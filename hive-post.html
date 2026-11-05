@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest-post.json">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Hive: пости й коментарі</title>
+<script src="https://cdn.jsdelivr.net/npm/@hiveio/dhive@1.2.8/dist/dhive.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1b1f24; --mut:#667085; --card:#fff; --line:#d5d9e0; --acc:#c8102e; --ok:#13795b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --fg:#e8eaee; --mut:#9aa3b2; --card:#1d2128; --line:#333a45; --acc:#ff5470; --ok:#4cc9a0; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,sans-serif; padding:12px; }
+  main { max-width:640px; margin:0 auto; }
+  h1 { font-size:20px; margin:4px 0 12px; }
+  label { display:block; font-size:14px; color:var(--mut); margin:12px 0 4px; }
+  input, textarea, select { width:100%; padding:10px; font:inherit; color:var(--fg); background:var(--card); border:1px solid var(--line); border-radius:6px; }
+  textarea { min-height:240px; resize:vertical; }
+  button { font:inherit; padding:10px 14px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  button.p { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; width:100%; margin-top:16px; padding:12px; }
+  button:disabled { opacity:.6; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; } .row > button { flex:none; }
+  .tabs { display:flex; gap:6px; margin:8px 0; overflow-x:auto; } .tabs button { flex:none; white-space:nowrap; padding:8px 12px; } .tabs .on { background:var(--fg); color:var(--bg); }
+  .tools { display:flex; gap:8px; margin-top:8px; align-items:center; } .tools span { font-size:13px; color:var(--mut); }
+  .ben { display:flex; gap:8px; margin-bottom:6px; } .ben .bp { max-width:90px; } .ben button { flex:none; }
+  #status, #cstatus { margin-top:12px; min-height:1.5em; } .ok { color:var(--ok); } .err { color:var(--acc); }
+  #preview, .cm { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:10px; overflow-wrap:anywhere; }
+  #preview img, .cm img { max-width:100%; height:auto; }
+  .cm { margin-top:8px; } .cm .m { font-size:13px; color:var(--mut); } .cm .kids { margin-left:12px; padding-left:8px; border-left:2px solid var(--line); }
+  .cm .rb { margin-top:6px; } .cm textarea { min-height:80px; }
+  .bar { height:6px; background:var(--line); border-radius:3px; margin:2px 0 8px; } .bar i { display:block; height:100%; background:var(--acc); border-radius:3px; }
+  .kpi { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; } .kpi div { flex:1 1 90px; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:8px; } .kpi b { display:block; font-size:20px; }
+  h3.s { font-size:15px; margin:16px 0 4px; } .cm a { color:inherit; }
+  details { margin-top:16px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Hive</h1>
+<div class="row">
+  <div><label for="user">Нік</label><input id="user" autocapitalize="none" autocomplete="username"></div>
+  <div><label for="key">Posting key</label><input id="key" type="password" autocomplete="off" placeholder="5K…"></div>
+</div>
+<div class="tabs"><button id="t1" class="on" type="button">Новий пост</button><button id="t2" type="button">Коментарі</button><button id="t3" type="button">Сповіщення</button><button id="t4" type="button">Статистика</button></div>
+
+<section id="new">
+  <div class="row" style="margin-top:8px"><select id="dsel"><option value="">Чернетки…</option></select><button id="dsave" type="button">Зберегти</button><button id="ddel" type="button">Видалити</button></div>
+  <label for="title">Заголовок</label><input id="title">
+  <label for="body">Текст (Markdown)</label>
+  <textarea id="body"></textarea>
+  <div class="tools"><button id="pick" type="button">Додати фото</button><button id="vpick" type="button">Додати відео</button><button id="toggle" type="button">Перегляд</button><span id="up"></span></div>
+  <div id="preview" hidden></div>
+
+  <label for="tsel">Шаблон: теги, спільнота, винагорода, бенефіціари</label>
+  <div class="row"><select id="tsel"><option value="">Шаблони…</option></select><button id="tsave" type="button">Зберегти як шаблон</button><button id="tdel" type="button">Видалити</button></div>
+
+  <label for="tags">Теги через пробіл</label><input id="tags" value="photography ukraine" autocapitalize="none">
+
+  <label for="cq">Спільнота</label>
+  <div class="row"><input id="cq" placeholder="Пошук спільноти…" autocapitalize="none"><button id="cfind" type="button">Знайти</button><button id="cmine" type="button">Мої</button></div>
+  <select id="comm" style="margin-top:6px"><option value="">Без спільноти</option></select>
+
+  <label for="pay">Винагорода</label>
+  <select id="pay"><option value="50">50% HBD / 50% HP (стандарт)</option><option value="hp">100% Hive Power</option><option value="0">Відмовитися від винагороди</option></select>
+
+  <label>Бенефіціари (відсоток від винагороди)</label>
+  <div id="bens"></div>
+  <button id="addben" type="button">Додати бенефіціара</button>
+
+  <details><summary>Нагадати опублікувати пізніше</summary>
+    <div class="row" style="margin-top:8px"><input type="datetime-local" id="rtime"><button id="rbtn" type="button">Нагадати</button></div>
+  </details>
+
+  <button id="send" class="p" type="button">Опублікувати</button>
+  <div id="status" role="status"></div>
+</section>
+
+<section id="com" hidden>
+  <div class="row" style="margin-top:8px"><select id="mine"></select><button id="reload" type="button">Мої пости</button></div>
+  <label for="url">Або посилання на пост</label>
+  <div class="row"><input id="url" placeholder="https://hive.blog/@нік/permlink"><button id="open" type="button">Відкрити</button></div>
+  <div id="cstatus" role="status"></div>
+  <div id="thread"></div>
+</section>
+
+<section id="not" hidden>
+  <div class="row" style="margin-top:8px"><select id="nfilter"><option value="all">Усі</option><option value="reply">Відповіді</option><option value="mention">Згадки</option><option value="vote">Голоси</option><option value="follow">Підписки</option><option value="reblog">Репости</option></select><button id="nread" type="button">Позначити прочитаними</button></div>
+  <div id="nstatus" role="status" style="margin-top:12px"></div><div id="nlist"></div>
+</section>
+
+<section id="sta" hidden>
+  <div class="row" style="margin-top:8px"><button id="sload" type="button">Оновити статистику</button></div>
+  <div id="sstatus" role="status" style="margin-top:12px"></div><div id="sout"></div>
+</section>
+
+<details><summary>Про ключ</summary>
+  <p>Потрібен лише posting key. Він не підходить для переказів, але дозволяє публікувати й коментувати. Active і owner ключі сюди не вводьте.</p>
+  <label for="k3s">API-ключ 3Speak (для завантаження відео)</label><input id="k3s" type="password" autocomplete="off" placeholder="Видає команда 3Speak">
+  <label><input id="remember" type="checkbox" style="width:auto"> Запам'ятати нік і ключ на цьому пристрої</label>
+</details>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const client = new dhive.Client(['https://api.hive.blog','https://api.deathwing.me','https://anyx.io']);
+const say = (el, m, c) => { el.textContent = m; el.className = c || ''; };
+const md = t => DOMPurify.sanitize(marked.parse(t, { breaks: true }));
+const ago = s => { const d = (Date.now() - new Date(s + 'Z')) / 1000; return d < 3600 ? Math.max(1, Math.floor(d/60)) + ' хв' : d < 86400 ? Math.floor(d/3600) + ' год' : Math.floor(d/86400) + ' д'; };
+const who = () => {
+  const author = $('#user').value.trim().replace(/^@/, '').toLowerCase(), k = $('#key').value.trim();
+  if (!author || !k) throw new Error('Введіть нік і posting key.');
+  return { author, key: dhive.PrivateKey.fromString(k) };
+};
+
+try {
+  $('#user').value = localStorage.getItem('hp_u') || ''; $('#key').value = localStorage.getItem('hp_k') || '';
+  $('#remember').checked = !!localStorage.getItem('hp_k');
+  $('#title').value = localStorage.getItem('hp_t') || ''; $('#body').value = localStorage.getItem('hp_b') || '';
+} catch (e) {}
+$('#title').oninput = () => { try { localStorage.setItem('hp_t', $('#title').value); } catch (e) {} };
+$('#body').oninput = () => { try { localStorage.setItem('hp_b', $('#body').value); } catch (e) {} };
+
+const TABS = { t1: 'new', t2: 'com', t3: 'not', t4: 'sta' };
+function show(t) {
+  Object.entries(TABS).forEach(([b, sec]) => { $('#' + sec).hidden = b !== t; $('#' + b).className = b === t ? 'on' : ''; });
+}
+Object.keys(TABS).forEach(t => $('#' + t).onclick = () => { show(t); if (t === 't3') loadNotes(); if (t === 't4') loadStats(); });
+
+/* ---- фото ---- */
+async function shrink(file, max = 2048) {
+  try {
+    const bmp = await createImageBitmap(file), k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return (await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88))) || file;
+  } catch (e) { return file; }
+}
+async function digest(b) {
+  if (dhive.cryptoUtils && dhive.cryptoUtils.sha256) return dhive.cryptoUtils.sha256(b);
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', b));
+}
+async function uploadImage(file, w) {
+  const blob = await shrink(file), data = new Uint8Array(await blob.arrayBuffer());
+  const pre = new TextEncoder().encode('ImageSigningChallenge'), all = new Uint8Array(pre.length + data.length);
+  all.set(pre); all.set(data, pre.length);
+  const sig = w.key.sign(await digest(all)).toString(), fd = new FormData(); fd.append('file', blob, 'photo.jpg');
+  const r = await fetch(`https://images.hive.blog/${w.author}/${sig}`, { method: 'POST', body: fd });
+  if (!r.ok) throw new Error('сервер відповів ' + r.status);
+  const j = await r.json(); if (!j.url) throw new Error('немає посилання у відповіді'); return j.url;
+}
+$('#pick').onclick = () => {
+  let w; try { w = who(); } catch (e) { return say($('#up'), e.message, 'err'); }
+  const ta = $('#body'); let pos = ta.selectionStart, end = ta.selectionEnd;
+  const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
+  f.onchange = async () => {
+    const fl = [...f.files];
+    for (let i = 0; i < fl.length; i++) {
+      say($('#up'), `Завантажую ${i + 1} з ${fl.length}…`);
+      try {
+        const ins = `\n![](${await uploadImage(fl[i], w)})\n`;
+        ta.value = ta.value.slice(0, pos) + ins + ta.value.slice(end); pos = end = pos + ins.length;
+      } catch (e) { return say($('#up'), 'Не вдалося: ' + e.message, 'err'); }
+    }
+    ta.focus(); ta.selectionStart = ta.selectionEnd = pos; ta.oninput(); say($('#up'), 'Фото додано');
+  };
+  f.click();
+};
+$('#toggle').onclick = () => {
+  const p = $('#preview'); p.hidden = !p.hidden; $('#body').hidden = !p.hidden;
+  $('#toggle').textContent = p.hidden ? 'Перегляд' : 'Редагувати';
+  if (!p.hidden) p.innerHTML = md($('#body').value);
+};
+
+/* ---- спільноти ---- */
+async function fillCommunities(q) {
+  const sel = $('#comm'); let list = [];
+  try {
+    if (q) list = ((await client.call('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
+    else { const a = who().author; list = ((await client.call('bridge', 'list_subscriptions', { account: a })) || []).map(c => [c[0], c[1]]); }
+  } catch (e) { return say($('#status'), 'Спільноти: ' + e.message, 'err'); }
+  sel.innerHTML = ''; sel.append(new Option('Без спільноти', ''));
+  list.forEach(([n, t]) => sel.append(new Option(`${t} (${n})`, n)));
+  say($('#status'), list.length ? '' : 'Нічого не знайдено.');
+}
+$('#cfind').onclick = () => { const q = $('#cq').value.trim(); if (q) fillCommunities(q); };
+$('#cmine').onclick = () => fillCommunities('');
+
+/* ---- бенефіціари ---- */
+function addBen() {
+  const d = document.createElement('div'); d.className = 'ben';
+  d.innerHTML = '<input class="ba" placeholder="нік" autocapitalize="none"><input class="bp" type="number" min="1" max="100" step="1" placeholder="%"><button type="button">×</button>';
+  d.querySelector('button').onclick = () => d.remove(); $('#bens').append(d);
+}
+$('#addben').onclick = () => { if (document.querySelectorAll('.ben').length < 8) addBen(); };
+function benefs(author) {
+  const out = []; let sum = 0;
+  document.querySelectorAll('.ben').forEach(r => {
+    const a = r.querySelector('.ba').value.trim().replace(/^@/, '').toLowerCase(), v = r.querySelector('.bp').value;
+    if (!a && !v) return;
+    const p = parseFloat(v);
+    if (!/^[a-z][a-z0-9.-]{2,15}$/.test(a) || !(p > 0)) throw new Error('Перевірте бенефіціарів: потрібні нік і відсоток.');
+    if (a === author) throw new Error('Себе бенефіціаром додавати не треба.');
+    if (out.some(o => o.account === a)) throw new Error('Бенефіціар ' + a + ' доданий двічі.');
+    sum += p; out.push({ account: a, weight: Math.round(p * 100) });
+  });
+  if (sum > 100) throw new Error('Сума відсотків бенефіціарів більша за 100.');
+  return out.sort((x, y) => x.account < y.account ? -1 : 1);
+}
+
+/* ---- публікація ---- */
+$('#send').onclick = async () => {
+  const st = $('#status'); $('#send').disabled = true; say(st, 'Публікую…');
+  try {
+    const { author, key } = who(), title = $('#title').value.trim(), body = $('#body').value.trim();
+    let tags = $('#tags').value.toLowerCase().split(/\s+/).filter(Boolean);
+    const comm = $('#comm').value;
+    if (comm) tags = [comm, ...tags.filter(t => t !== comm)];
+    tags = tags.slice(0, 10);
+    if (!title || !body || !tags.length) throw new Error('Потрібні заголовок, текст і хоча б один тег або спільнота.');
+    const ben = benefs(author), mode = $('#pay').value, permlink = 'post-' + Date.now().toString(36);
+    const ops = [['comment', { parent_author: '', parent_permlink: comm || tags[0], author, permlink, title, body,
+      json_metadata: JSON.stringify({ tags, app: 'my-hive-app/0.2', format: 'markdown' }) }]];
+    if (mode !== '50' || ben.length) ops.push(['comment_options', { author, permlink,
+      max_accepted_payout: mode === '0' ? '0.000 HBD' : '1000000.000 HBD', percent_hbd: mode === 'hp' ? 0 : 10000,
+      allow_votes: true, allow_curation_rewards: true, extensions: ben.length ? [[0, { beneficiaries: ben }]] : [] }]);
+    await client.broadcast.sendOperations(ops, key);
+    try {
+      if ($('#remember').checked) { localStorage.setItem('hp_u', author); localStorage.setItem('hp_k', $('#key').value.trim()); } else localStorage.removeItem('hp_k');
+      localStorage.removeItem('hp_t'); localStorage.removeItem('hp_b');
+    } catch (e) {}
+    { const dd = $('#dsel').value; if (dd) { drafts = drafts.filter(x => x.id !== dd); store.set('hp_drafts', drafts); refresh(); } }
+    say(st, `Опубліковано: https://hive.blog/@${author}/${permlink}`, 'ok'); $('#title').value = ''; $('#body').value = '';
+  } catch (e) { say(st, 'Помилка: ' + (e.message || e), 'err'); }
+  $('#send').disabled = false;
+};
+
+/* ---- коментарі ---- */
+function node(map, k, depth, root) {
+  const p = map[k], el = document.createElement('div'); el.className = 'cm';
+  el.innerHTML = `<div class="m"><b>@${esc(p.author)}</b> · ${ago(p.created)}</div>${p.title && depth === 0 ? `<h3>${esc(p.title)}</h3>` : ''}<div>${md(p.body)}</div>
+    <button class="rp" type="button">Відповісти</button><div class="kids"></div>`;
+  const kids = el.querySelector('.kids');
+  el.querySelector('.rp').onclick = e => {
+    if (el.querySelector('.rb')) return el.querySelector('.rb').remove();
+    const b = document.createElement('div'); b.className = 'rb';
+    b.innerHTML = '<textarea placeholder="Ваша відповідь…"></textarea><button class="p" type="button">Надіслати</button>';
+    b.querySelector('button').onclick = async ev => {
+      const t = b.querySelector('textarea').value.trim(); if (!t) return;
+      ev.target.disabled = true;
+      try {
+        const { author, key } = who(), permlink = 're-' + p.author.replace(/\./g, '-') + '-' + Date.now().toString(36);
+        await client.broadcast.comment({ parent_author: p.author, parent_permlink: p.permlink, author, permlink, title: '', body: t,
+          json_metadata: JSON.stringify({ tags: ['hive'], app: 'my-hive-app/0.2', format: 'markdown' }) }, key);
+        const m = { [author + '/' + permlink]: { author, permlink, body: t, created: new Date().toISOString().slice(0, 19), replies: [] } };
+        kids.prepend(node(m, author + '/' + permlink, depth + 1)); b.remove();
+      } catch (er) { say($('#cstatus'), 'Не надіслано: ' + (er.message || er), 'err'); ev.target.disabled = false; }
+    };
+    el.insertBefore(b, kids);
+  };
+  (p.replies || []).map(r => map[r]).filter(Boolean).sort((a, b) => a.created.localeCompare(b.created))
+    .forEach(c => kids.append(node(map, c.author + '/' + c.permlink, depth + 1)));
+  return el;
+}
+async function openPost(author, permlink) {
+  const st = $('#cstatus'); say(st, 'Завантаження…'); $('#thread').innerHTML = '';
+  try {
+    const map = await client.call('bridge', 'get_discussion', { author, permlink });
+    const k = author + '/' + permlink; if (!map || !map[k]) throw new Error('пост не знайдено');
+    const n = Object.keys(map).length - 1; $('#thread').append(node(map, k, 0)); say(st, `Коментарів: ${n}`);
+  } catch (e) { say(st, 'Не вдалося: ' + (e.message || e), 'err'); }
+}
+$('#reload').onclick = async () => {
+  try {
+    const { author } = who(); say($('#cstatus'), 'Завантаження…');
+    const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 15 });
+    $('#mine').innerHTML = ''; (r || []).forEach(p => $('#mine').append(new Option(`${p.title || p.permlink} (${p.children})`, p.author + '/' + p.permlink)));
+    say($('#cstatus'), r && r.length ? '' : 'Постів немає.');
+    if (r && r.length) { const [a, pl] = $('#mine').value.split('/'); openPost(a, pl); }
+  } catch (e) { say($('#cstatus'), e.message, 'err'); }
+};
+$('#mine').onchange = () => { const [a, pl] = $('#mine').value.split('/'); openPost(a, pl); };
+$('#open').onclick = () => {
+  const m = $('#url').value.match(/@([a-z0-9.-]+)\/([a-z0-9-]+)/i);
+  if (!m) return say($('#cstatus'), 'У посиланні має бути @нік/permlink.', 'err');
+  openPost(m[1].toLowerCase(), m[2]);
+};
+
+/* ---- сповіщення ---- */
+let notes = [];
+async function loadNotes() {
+  const st = $('#nstatus');
+  try {
+    const { author } = who(); say(st, 'Завантаження…');
+    notes = (await client.call('bridge', 'account_notifications', { account: author, limit: 50 })) || [];
+    let un = '';
+    try { const u = await client.call('bridge', 'unread_notifications', { account: author }); if (u && u.unread) un = `Нових: ${u.unread}. `; } catch (e) {}
+    renderNotes(); say(st, notes.length ? un : 'Сповіщень немає.');
+  } catch (e) { say(st, e.message, 'err'); }
+}
+function renderNotes() {
+  const f = $('#nfilter').value, box = $('#nlist'); box.innerHTML = '';
+  notes.filter(n => f === 'all' || (f === 'reply' ? n.type === 'reply' || n.type === 'reply_comment' : n.type === f)).forEach(n => {
+    const el = document.createElement('div'); el.className = 'cm';
+    el.innerHTML = `<div class="m">${ago(n.date)} · ${esc(n.type)}</div><div>${esc(n.msg)}</div>`;
+    const m = (n.url || '').match(/^@([a-z0-9.-]+)\/([a-z0-9-]+)/i);
+    if (m && ['reply', 'reply_comment', 'mention'].includes(n.type)) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Відкрити й відповісти';
+      b.onclick = () => { show('t2'); openPost(m[1].toLowerCase(), m[2]); }; el.append(b);
+    }
+    box.append(el);
+  });
+}
+$('#nfilter').onchange = renderNotes;
+$('#nread').onclick = async () => {
+  try {
+    const { author, key } = who();
+    await client.broadcast.json({ id: 'notify', json: JSON.stringify(['setLastRead', { date: new Date().toISOString().slice(0, 19) }]),
+      required_auths: [], required_posting_auths: [author] }, key);
+    say($('#nstatus'), 'Позначено прочитаними.', 'ok');
+  } catch (e) { say($('#nstatus'), 'Не вийшло: ' + (e.message || e), 'err'); }
+};
+
+/* ---- статистика ---- */
+async function loadStats() {
+  const st = $('#sstatus'), out = $('#sout');
+  try {
+    const { author } = who(); say(st, 'Завантаження…'); out.innerHTML = '';
+    const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 30 });
+    const posts = (r || []).filter(p => p.author === author).map(p => {
+      const tg = p.json_metadata && p.json_metadata.tags;
+      return { title: p.title || p.permlink, votes: (p.stats && p.stats.total_votes) ?? (p.active_votes || []).length, com: p.children || 0,
+        pay: Number(p.payout) || parseFloat(p.pending_payout_value) || 0, tags: Array.isArray(tg) ? tg : [],
+        hour: new Date(p.created + 'Z').getHours(), url: `https://hive.blog/@${p.author}/${p.permlink}` };
+    });
+    if (!posts.length) return say(st, 'Постів не знайдено.');
+    const sum = (a, f) => a.reduce((s, x) => s + f(x), 0), avg = (a, f) => a.length ? sum(a, f) / a.length : 0;
+    const bars = (rows) => { const mx = Math.max(...rows.map(x => x[1]), 0.0001);
+      return rows.map(([n, v, c]) => `<div>${esc(n)} <span class="m">· ${v.toFixed(1)} голосів у середньому, постів: ${c}</span></div><div class="bar"><i style="width:${Math.round(v / mx * 100)}%"></i></div>`).join(''); };
+    let h = `<div class="kpi"><div><b>${posts.length}</b>постів</div><div><b>${avg(posts, x => x.votes).toFixed(1)}</b>голосів у середньому</div>
+      <div><b>${avg(posts, x => x.com).toFixed(1)}</b>коментарів у середньому</div><div><b>${sum(posts, x => x.pay).toFixed(2)}</b>виплат, HBD</div></div>`;
+    const top = [...posts].sort((a, b) => b.votes - a.votes).slice(0, 5);
+    h += '<h3 class="s">Найкращі пости</h3>' + top.map(x => `<div class="cm"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="m">голосів: ${x.votes} · коментарів: ${x.com} · ${x.pay.toFixed(2)} HBD</div></div>`).join('');
+    const tg = {}; posts.forEach(x => x.tags.forEach(t => (tg[t] = tg[t] || []).push(x)));
+    const trows = Object.entries(tg).map(([t, a]) => [t, avg(a, x => x.votes), a.length]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (trows.length) h += '<h3 class="s">Теги</h3>' + bars(trows);
+    const slots = [[0, 6, 'Ніч'], [6, 12, 'Ранок'], [12, 18, 'День'], [18, 24, 'Вечір']]
+      .map(([a, b, n]) => { const g = posts.filter(x => x.hour >= a && x.hour < b); return [n, avg(g, x => x.votes), g.length]; }).filter(x => x[2]);
+    if (slots.length) h += '<h3 class="s">Час публікації (за вашим часом)</h3>' + bars(slots);
+    if (posts.length < 10) h += '<p class="m">Постів поки мало, тому висновки орієнтовні.</p>';
+    out.innerHTML = h; say(st, '');
+  } catch (e) { say(st, e.message || String(e), 'err'); }
+}
+$('#sload').onclick = loadStats;
+
+/* ---- чернетки й шаблони ---- */
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+let drafts = store.get('hp_drafts', []), tpls = store.get('hp_tpls', []);
+function fillSel(sel, list, ph) {
+  const v = sel.value; sel.innerHTML = ''; sel.append(new Option(ph, ''));
+  list.forEach(x => sel.append(new Option(x.name, x.id))); sel.value = list.some(x => x.id === v) ? v : '';
+}
+function refresh() { fillSel($('#dsel'), drafts, 'Чернетки…'); fillSel($('#tsel'), tpls, 'Шаблони…'); }
+function setComm(c) {
+  const sel = $('#comm');
+  if (c && ![...sel.options].some(o => o.value === c)) sel.append(new Option(c, c));
+  sel.value = c || '';
+}
+function setBens(list) {
+  $('#bens').innerHTML = '';
+  (list || []).forEach(b => { addBen(); const r = $('#bens').lastElementChild; r.querySelector('.ba').value = b.a; r.querySelector('.bp').value = b.p; });
+}
+const meta = () => ({ tags: $('#tags').value, comm: $('#comm').value, pay: $('#pay').value,
+  bens: [...document.querySelectorAll('.ben')].map(r => ({ a: r.querySelector('.ba').value.trim(), p: r.querySelector('.bp').value })).filter(b => b.a || b.p) });
+function applyMeta(m) { $('#tags').value = m.tags || ''; setComm(m.comm); $('#pay').value = m.pay || '50'; setBens(m.bens); }
+const askName = def => (prompt('Назва', def) || '').trim();
+const saved = (key, list) => store.set(key, list) ? true : (say($('#status'), 'Не вдалося зберегти: сховище браузера недоступне або повне.', 'err'), false);
+
+$('#dsave').onclick = () => {
+  const cur = drafts.find(d => d.id === $('#dsel').value);
+  const name = cur ? cur.name : askName($('#title').value.trim().slice(0, 40) || 'Чернетка');
+  if (!name) return;
+  const d = Object.assign({ id: cur ? cur.id : 'd' + Date.now().toString(36), name, title: $('#title').value, body: $('#body').value }, meta());
+  if (cur) drafts[drafts.indexOf(cur)] = d; else drafts.unshift(d);
+  if (!saved('hp_drafts', drafts)) return;
+  refresh(); $('#dsel').value = d.id; say($('#status'), 'Чернетку збережено.', 'ok');
+};
+$('#dsel').onchange = () => {
+  const d = drafts.find(x => x.id === $('#dsel').value); if (!d) return;
+  $('#title').value = d.title; $('#body').value = d.body; applyMeta(d); $('#title').oninput(); $('#body').oninput();
+  say($('#status'), 'Чернетку відкрито.');
+};
+$('#ddel').onclick = () => {
+  const id = $('#dsel').value; if (!id || !confirm('Видалити цю чернетку?')) return;
+  drafts = drafts.filter(x => x.id !== id); saved('hp_drafts', drafts); refresh();
+};
+
+$('#tsave').onclick = () => {
+  const name = askName('Мій шаблон'); if (!name) return;
+  const old = tpls.find(t => t.name === name), t = Object.assign({ id: old ? old.id : 't' + Date.now().toString(36), name }, meta());
+  if (old) tpls[tpls.indexOf(old)] = t; else tpls.unshift(t);
+  if (!saved('hp_tpls', tpls)) return;
+  refresh(); $('#tsel').value = t.id; say($('#status'), 'Шаблон збережено.', 'ok');
+};
+$('#tsel').onchange = () => {
+  const t = tpls.find(x => x.id === $('#tsel').value); if (!t) return;
+  applyMeta(t); say($('#status'), 'Шаблон застосовано.');
+};
+$('#tdel').onclick = () => {
+  const id = $('#tsel').value; if (!id || !confirm('Видалити цей шаблон?')) return;
+  tpls = tpls.filter(x => x.id !== id); saved('hp_tpls', tpls); refresh();
+};
+refresh();
+
+/* ---- відео 3Speak ---- */
+function tusUpload(file, owner, apiKey, short, onProgress) {
+  return new Promise((resolve, reject) => {
+    let embed = '';
+    new tus.Upload(file, {
+      endpoint: 'https://embed.3speak.tv/uploads', retryDelays: [0, 2000, 5000],
+      headers: { 'X-API-Key': apiKey },
+      metadata: { filename: file.name, filetype: file.type, owner, frontend_app: 'my-hive-app', short: short ? 'true' : 'false' },
+      onError: reject,
+      onProgress: (a, b) => onProgress(Math.round(a / b * 100)),
+      onAfterResponse: (req, res) => { const h = res.getHeader('X-Embed-URL'); if (h) embed = h; },
+      onSuccess: () => embed ? resolve(embed) : reject(new Error('сервер не повернув посилання на відео'))
+    }).start();
+  });
+}
+const watchUrl = u => u.replace('/embed?', '/watch?');
+async function pollVideo(embed, out) {
+  const pl = embed.split('/').pop();
+  for (let i = 0; i < 90; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const v = await (await fetch('https://embed.3speak.tv/video/' + pl)).json();
+      if (v.status === 'published') return out('Відео готове до перегляду.', 'ok');
+      if (v.status === 'failed') return out('Кодування відео не вдалося.', 'err');
+      out('Кодування відео: ' + (v.encodingProgress != null ? v.encodingProgress + '%' : v.status));
+    } catch (e) { return; }
+  }
+}
+function pickVideo(ta, owner, apiKey, out) {
+  const pos = ta.selectionStart, end = ta.selectionEnd;
+  const f = document.createElement('input'); f.type = 'file'; f.accept = 'video/*';
+  f.onchange = async () => {
+    const file = f.files[0]; if (!file) return;
+    const short = confirm('Це коротке відео до 60 секунд (Shorts)?\nОК: так. Скасувати: звичайне відео.');
+    try {
+      const embed = await tusUpload(file, owner, apiKey, short, n => out('Відео: ' + n + '%'));
+      const ins = '\n' + watchUrl(embed) + '\n';
+      ta.value = ta.value.slice(0, pos) + ins + ta.value.slice(end);
+      ta.focus(); ta.selectionStart = ta.selectionEnd = pos + ins.length; if (ta.oninput) ta.oninput();
+      out('Відео завантажено, іде кодування.', 'ok'); pollVideo(embed, out);
+    } catch (e) { out('Не вдалося: ' + (e.message || e), 'err'); }
+  };
+  f.click();
+}
+try { $('#k3s').value = localStorage.getItem('hp_3s') || ''; } catch (e) {}
+$('#k3s').onchange = () => { try { localStorage.setItem('hp_3s', $('#k3s').value.trim()); } catch (e) {} };
+$('#vpick').onclick = () => {
+  let w; try { w = who(); } catch (e) { return say($('#up'), e.message, 'err'); }
+  const k = $('#k3s').value.trim();
+  if (!k) return say($('#up'), 'Спочатку вкажіть API-ключ 3Speak у розділі «Про ключ» унизу.', 'err');
+  pickVideo($('#body'), w.author, k, (t, c) => say($('#up'), t, c));
+};
+
+/* ---- нагадування (календар) ---- */
+function downloadIcs(local, title, note) {
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const start = new Date(local), end = new Date(start.getTime() + 15 * 60000), now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//my-hive-app//UK', 'BEGIN:VEVENT',
+    `UID:${Date.now().toString(36)}@my-hive-app`, `DTSTAMP:${now}`, `DTSTART:${fmt(start)}`, `DTEND:${fmt(end)}`,
+    `SUMMARY:${esc(title)}`, `DESCRIPTION:${esc(note)}`, 'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', `DESCRIPTION:${esc(title)}`, 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' })); a.download = 'hive-reminder.ics';
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$('#rbtn').onclick = () => {
+  const v = $('#rtime').value;
+  if (!v) return say($('#status'), 'Оберіть дату й час нагадування.', 'err');
+  if (new Date(v) < new Date()) return say($('#status'), 'Цей час уже минув.', 'err');
+  downloadIcs(v, 'Опублікувати на Hive: ' + ($('#title').value.trim() || 'новий пост'), 'Відкрийте форму Hive і опублікуйте збережену чернетку.');
+  say($('#status'), 'Файл нагадування створено. Відкрийте його, щоб додати подію в календар.', 'ok');
+};
+
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
