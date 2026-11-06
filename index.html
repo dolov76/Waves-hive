@@ -76,6 +76,11 @@
   .meta b, .av img { cursor:pointer; }
   .prof { display:flex; gap:12px; align-items:center; margin-bottom:10px; } .pimg { width:56px; height:56px; border-radius:50%; background:var(--soft); object-fit:cover; flex:none; } .pabout { margin:2px 0; }
   .act .bm { margin-left:auto; } .act .bm.on { color:var(--fg); } .act .bm.on svg { fill:currentColor; }
+  .vp { position:relative; aspect-ratio:16/9; background:#000; border-radius:10px; overflow:hidden; cursor:pointer; margin:6px 0; display:flex; align-items:center; justify-content:center; }
+  .vp img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; margin:0; border-radius:0; }
+  .vp b { position:relative; width:56px; height:56px; border-radius:50%; background:rgba(0,0,0,.65); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; }
+  .vp iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+  .imgfail { display:block; min-height:48px; padding:12px; background:rgba(128,128,128,.15); color:#888; font-size:13px; border-radius:8px; }
   #msg { padding:10px 16px; color:var(--mut); font-size:13px; } .err { color:var(--like); }
 </style>
 </head>
@@ -158,7 +163,55 @@ refreshAcc();
 const msg = (t, err) => { $('#msg').textContent = t; $('#msg').className = err ? 'err' : ''; };
 const ago = s => { const d = (Date.now() - new Date(s + 'Z')) / 1000;
   return d < 60 ? 'щойно' : d < 3600 ? Math.floor(d/60) + ' хв' : d < 86400 ? Math.floor(d/3600) + ' год' : Math.floor(d/86400) + ' д'; };
-const md = t => DOMPurify.sanitize(marked.parse(t, { breaks: true }));
+const md = t => {
+  const d = document.createElement('div');
+  d.innerHTML = DOMPurify.sanitize(marked.parse(t, { breaks: true }), { ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'allow', 'frameborder'] });
+  richify(d); return d.innerHTML;
+};
+const VIDEO_RE = /https?:\/\/(?:(?:play\.)?3speak\.tv\/(?:watch|embed)\?v=[\w.\/-]+|(?:www\.)?youtube\.com\/watch\?[^\s)"'<]+|youtu\.be\/[\w-]{11})/i;
+const ytEmbed = u => { const m = u.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? 'https://www.youtube-nocookie.com/embed/' + m[1] : ''; };
+const spEmbed = u => { const m = u.match(/^https?:\/\/(?:play\.)?3speak\.tv\/(?:watch|embed)\?v=([\w.-]+\/[\w-]+)/i); return m ? 'https://play.3speak.tv/embed?v=' + m[1] : ''; };
+function vplay(src, th) {
+  const b = document.createElement('div'); b.className = 'vp'; b.dataset.src = src;
+  if (th) { const i = document.createElement('img'); i.alt = ''; i.loading = 'lazy'; i.src = th; b.append(i); }
+  const p = document.createElement('b'); p.textContent = '▶'; b.append(p); return b;
+}
+function richify(root) {
+  root.querySelectorAll('img').forEach(im => {
+    let src = im.getAttribute('src') || ''; if (!src) return;
+    if (src.startsWith('//')) src = 'https:' + src;
+    if (src.startsWith('ipfs://')) src = 'https://ipfs.io/ipfs/' + src.slice(7);
+    if (/^https?:\/\//i.test(src) && !/^https:\/\/images\.hive\.blog\//i.test(src)) { im.dataset.o = src; im.src = 'https://images.hive.blog/0x0/' + src; }
+    else im.src = src;
+    im.loading = 'lazy'; im.removeAttribute('width'); im.removeAttribute('height');
+  });
+  root.querySelectorAll('a[href]').forEach(a => {
+    const h = a.getAttribute('href') || '', e = spEmbed(h) || ytEmbed(h); if (!e) return;
+    const im = a.querySelector('img');
+    let th = im ? im.getAttribute('src') : '';
+    if (!th && e.includes('youtube')) th = 'https://img.youtube.com/vi/' + e.split('/').pop() + '/hqdefault.jpg';
+    a.replaceWith(vplay(e, th));
+  });
+  root.querySelectorAll('iframe').forEach(f => {
+    const s = f.getAttribute('src') || '';
+    const e = spEmbed(s) || ytEmbed(s) || (/^https:\/\/(player\.vimeo\.com\/video\/|odysee\.com\/\$\/embed\/|rumble\.com\/embed\/|www\.bitchute\.com\/embed\/)/i.test(s) ? s : '');
+    if (e) f.replaceWith(vplay(e, '')); else f.remove();
+  });
+}
+function playVp(b) {
+  if (b.querySelector('iframe')) return;
+  const f = document.createElement('iframe'), s = b.dataset.src;
+  f.src = s.includes('youtube') ? s + '?autoplay=1' : s;
+  f.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media'; f.allowFullscreen = true;
+  f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation allow-popups');
+  b.textContent = ''; b.append(f);
+}
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.vp'); if (b) { e.stopPropagation(); e.preventDefault(); playVp(b); } }, true);
+document.addEventListener('error', e => {
+  const im = e.target; if (!im || im.tagName !== 'IMG' || im.closest('.vp')) return;
+  if (im.dataset.o && !im.dataset.t) { im.dataset.t = 1; im.src = im.dataset.o; return; }
+  im.alt = 'Фото недоступне'; im.classList.add('imgfail');
+}, true);
 const ICON_H = '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
 const ICON_B = '<svg viewBox="0 0 24 24"><path d="M6 4h12v16l-6-4-6 4z"/></svg>';
 const ICON_C = '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>';
@@ -400,10 +453,10 @@ async function communitySearch(q) {
   } catch (e) { msg('Пошук спільнот: ' + (e.message || e), true); }
 }
 function postLike(x) {
-  const plain = (x.body || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<[^>]+>/g, '').replace(/[#*_>`~]/g, '').replace(/\s+/g, ' ').trim();
+  const plain = (x.body || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<[^>]+>/g, '').replace(/[#*_>`~]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
   let img = '';
   try { const m = typeof x.json_metadata === 'string' ? JSON.parse(x.json_metadata) : x.json_metadata; img = (m && m.image && m.image[0]) || ''; } catch (e) {}
-  const body = '**' + (x.title || '').replace(/[*_`]/g, '') + '**\n\n' + plain.slice(0, 280) + (plain.length > 280 ? '…' : '') + (img ? '\n\n![](' + img + ')' : '');
+  const rb = x.reblogged_by && x.reblogged_by[0], body = (rb ? '*↻ репост від @' + rb + '*\n\n' : '') + '**' + (x.title || '').replace(/[*_`]/g, '') + '**\n\n' + plain.slice(0, 280) + (plain.length > 280 ? '…' : '') + (() => { const vm = (x.body || '').match(VIDEO_RE); return vm ? (img ? '\n\n[![](' + img + ')](' + vm[0] + ')' : '\n\n' + vm[0]) : (img ? '\n\n![](' + img + ')' : ''); })();
   return Object.assign({}, x, { body, _body: x.body, net_votes: (x.stats && x.stats.total_votes) ?? (x.active_votes || []).length });
 }
 const POSTM = ['pfeed', 'pnew', 'ptrend', 'phot', 'pmine'];
@@ -419,7 +472,7 @@ function postReq() {
   if (mode === 'pnew') return rk('created', '');
   if (mode === 'ptrend') return rk('trending', '');
   if (mode === 'phot') return rk('hot', '');
-  return ['get_account_posts', { sort: mode === 'pfeed' ? 'feed' : 'posts', account: me, limit: 20 }];
+  return ['get_account_posts', { sort: mode === 'pfeed' ? 'feed' : 'blog', account: me, limit: 20 }];
 }
 async function fillCommunity() {
   const more = $('#more');
