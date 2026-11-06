@@ -1,7 +1,7 @@
 {
-  "name": "Hive Threads",
-  "short_name": "Hive Threads",
-  "description": "Хвилі Hive: стрічка, запис, відповіді, сповіщення, статистика",
+  "name": "Hive",
+  "short_name": "Hive",
+  "description": "Hive: стрічка постів і хвиль, читання, коментарі, сповіщення, закладки",
   "lang": "uk",
   "id": "./hive-threads.html",
   "start_url": "./hive-threads.html",
