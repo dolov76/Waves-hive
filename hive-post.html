@@ -123,6 +123,7 @@ const md = t => {
   d.innerHTML = DOMPurify.sanitize(marked.parse(t, { breaks: true }), { ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'allow', 'frameborder'] });
   richify(d); return d.innerHTML;
 };
+const NATIVE = /^https?:\/\/(images\.hive\.blog|images\.ecency\.com|img\.ecency\.com|files\.peakd\.com|cdn\.steemitimages\.com|steemitimages\.com|ipfs\.3speak\.tv|media\.3speak\.tv)\//i;
 const VIDEO_RE = /https?:\/\/(?:(?:play\.)?3speak\.tv\/(?:watch|embed)\?v=[\w.\/-]+|(?:www\.)?youtube\.com\/watch\?[^\s)"'<]+|youtu\.be\/[\w-]{11})/i;
 const ytEmbed = u => { const m = u.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? 'https://www.youtube-nocookie.com/embed/' + m[1] : ''; };
 const spEmbed = u => { const m = u.match(/^https?:\/\/(?:play\.)?3speak\.tv\/(?:watch|embed)\?v=([\w.-]+\/[\w-]+)/i); return m ? 'https://play.3speak.tv/embed?v=' + m[1] : ''; };
@@ -136,8 +137,10 @@ function richify(root) {
     let src = im.getAttribute('src') || ''; if (!src) return;
     if (src.startsWith('//')) src = 'https:' + src;
     if (src.startsWith('ipfs://')) src = 'https://ipfs.io/ipfs/' + src.slice(7);
-    if (/^https?:\/\//i.test(src) && !/^https:\/\/images\.hive\.blog\//i.test(src)) { im.dataset.o = src; im.src = 'https://images.hive.blog/0x0/' + src; }
+    if (NATIVE.test(src)) src = src.replace(/^http:/i, 'https:');
+    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = 'https://images.hive.blog/0x0/' + src; }
     else im.src = src;
+    im.referrerPolicy = 'no-referrer';
     im.loading = 'lazy'; im.removeAttribute('width'); im.removeAttribute('height');
   });
   root.querySelectorAll('a[href]').forEach(a => {
@@ -164,7 +167,9 @@ function playVp(b) {
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.vp'); if (b) { e.stopPropagation(); e.preventDefault(); playVp(b); } }, true);
 document.addEventListener('error', e => {
   const im = e.target; if (!im || im.tagName !== 'IMG' || im.closest('.vp')) return;
-  if (im.dataset.o && !im.dataset.t) { im.dataset.t = 1; im.src = im.dataset.o; return; }
+  const step = +(im.dataset.t || 0);
+  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = im.dataset.o; return; }
+  if (step <= 1 && /\/\/images\.ecency\.com\//i.test(im.src)) { im.dataset.t = 2; im.src = im.src.replace('//images.ecency.com/', '//img.ecency.com/'); return; }
   im.alt = 'Фото недоступне'; im.classList.add('imgfail');
 }, true);
 const ago = s => { const d = (Date.now() - new Date(s + 'Z')) / 1000; return d < 3600 ? Math.max(1, Math.floor(d/60)) + ' хв' : d < 86400 ? Math.floor(d/3600) + ' год' : Math.floor(d/86400) + ' д'; };
