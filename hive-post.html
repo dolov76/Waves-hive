@@ -122,7 +122,7 @@
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network', 'https://hive-api.arcange.eu'], { timeout: 10000 });
+const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network'], { timeout: 10000 });
 const say = (el, m, c) => { el.textContent = m; el.className = c || ''; };
 const md = t => {
   const d = document.createElement('div');
@@ -130,6 +130,14 @@ const md = t => {
   richify(d); return d.innerHTML;
 };
 const NATIVE = /^https?:\/\/(images\.hive\.blog|images\.ecency\.com|img\.ecency\.com|files\.peakd\.com|cdn\.steemitimages\.com|steemitimages\.com|ipfs\.3speak\.tv|media\.3speak\.tv)\//i;
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58(bytes) {
+  let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b);
+  let s = ''; while (n > 0n) { s = B58[Number(n % 58n)] + s; n /= 58n; }
+  for (const b of bytes) { if (b === 0) s = '1' + s; else break; }
+  return s;
+}
+const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().encode(u));
 const VIDEO_RE = /https?:\/\/(?:(?:play\.)?3speak\.tv\/(?:watch|embed)\?v=[\w.\/-]+|(?:www\.)?youtube\.com\/watch\?[^\s)"'<]+|youtu\.be\/[\w-]{11})/i;
 const ytEmbed = u => { const m = u.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? 'https://www.youtube-nocookie.com/embed/' + m[1] : ''; };
 const spEmbed = u => { const m = u.match(/^https?:\/\/(?:play\.)?3speak\.tv\/(?:watch|embed)\?v=([\w.-]+\/[\w-]+)/i); return m ? 'https://play.3speak.tv/embed?v=' + m[1] : ''; };
@@ -174,7 +182,7 @@ document.addEventListener('click', e => { const b = e.target.closest && e.target
 document.addEventListener('error', e => {
   const im = e.target; if (!im || im.tagName !== 'IMG' || im.closest('.vp')) return;
   const step = +(im.dataset.t || 0);
-  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = 'https://images.hive.blog/0x0/' + im.dataset.o; return; }
+  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = proxyUrl(im.dataset.o); return; }
   if (step <= 1 && /\/\/images\.ecency\.com\//i.test(im.src)) { im.dataset.t = 2; im.src = im.src.replace('//images.ecency.com/', '//img.ecency.com/'); return; }
   im.alt = 'Фото недоступне'; im.classList.add('imgfail');
 }, true);

@@ -9,6 +9,14 @@ const Diag = (() => {
     } catch (e) { line = `✗ ${name}: ${e.message || e}`; }
     out(line); return line;
   }
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58(bytes) {
+  let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b);
+  let s = ''; while (n > 0n) { s = B58[Number(n % 58n)] + s; n /= 58n; }
+  for (const b of bytes) { if (b === 0) s = '1' + s; else break; }
+  return s;
+}
+const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().encode(u));
   const imgOk = u => new Promise((res, rej) => {
     const i = new Image(), t = setTimeout(() => rej(new Error('таймаут')), 9000);
     i.onload = () => { clearTimeout(t); res(); }; i.onerror = () => { clearTimeout(t); rej(new Error('не завантажилось')); };
@@ -37,7 +45,7 @@ const Diag = (() => {
       if (miss.length) throw new Error('не завантажено: ' + miss.join(', ')); return 'усі завантажені';
     });
 
-    for (const u of ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network', 'https://hive-api.arcange.eu']) {
+    for (const u of ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network']) {
       await S('Вузол ' + u.replace('https://', ''), async () => {
         const g = await new dhive.Client([u], { timeout: 8000 }).database.getDynamicGlobalProperties();
         return `блок ${g.head_block_number}, відставання ${Math.max(0, Math.round((Date.now() - new Date(g.time + 'Z')) / 1000))} с`;
@@ -50,7 +58,7 @@ const Diag = (() => {
     for (const h of ['hive.flow', 'ecency.waves']) {
       await S('Контейнер хвиль ' + h, async () => {
         const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: h, limit: 1 });
-        if (!r || !r[0]) throw new Error('постів не знайдено');
+        if (!r || !r[0]) throw new Error('постів не знайдено' + (h === 'hive.flow' ? ' (зараз не використовується, це нормально)' : ''));
         return `${r[0].permlink}, відповідей ${r[0].children}, вік ${Math.round((Date.now() - new Date(r[0].created + 'Z')) / 3600000)} год`;
       });
     }
@@ -78,7 +86,7 @@ const Diag = (() => {
     await S('Фото images.hive.blog', () => imgOk('https://images.hive.blog/u/hiveio/avatar/small'));
     await S('Фото images.ecency.com', () => imgOk('https://images.ecency.com/u/ecency/avatar/small'));
     await S('Фото стороннього сайту (напряму)', () => imgOk('https://www.google.com/favicon.ico'));
-    await S('Фото стороннього сайту (через проксі Hive)', () => imgOk('https://images.hive.blog/0x0/https://www.google.com/favicon.ico'));
+    await S('Фото стороннього сайту (через проксі Hive)', () => imgOk(proxyUrl('https://www.google.com/favicon.ico')));
     await S('Сервіс фото images.hive.blog (завантаження)', () => reach('https://images.hive.blog/'));
     await S('3Speak embed (завантаження відео)', () => reach('https://embed.3speak.tv/video/diag'));
 
