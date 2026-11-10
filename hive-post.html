@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src *; connect-src *; frame-src https://play.3speak.tv https://www.youtube-nocookie.com https://player.vimeo.com https://odysee.com https://rumble.com https://www.bitchute.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest-post.json">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,8 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
+<script src="secure.js"></script>
+<script src="diag.js"></script>
 <style>
   :root { --bg:#f6f7f9; --fg:#1b1f24; --mut:#667085; --card:#fff; --line:#d5d9e0; --acc:#c8102e; --ok:#13795b; }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --fg:#e8eaee; --mut:#9aa3b2; --card:#1d2128; --line:#333a45; --acc:#ff5470; --ok:#4cc9a0; } }
@@ -109,7 +112,10 @@
 <details><summary>Про ключ</summary>
   <p>Потрібен лише posting key. Він не підходить для переказів, але дозволяє публікувати й коментувати. Active і owner ключі сюди не вводьте.</p>
   <label for="k3s">API-ключ 3Speak (для завантаження відео)</label><input id="k3s" type="password" autocomplete="off" placeholder="Видає команда 3Speak">
-  <label><input id="remember" type="checkbox" style="width:auto"> Запам'ятати нік і ключ на цьому пристрої</label>
+  <p>Ключ зберігається лише в зашифрованому вигляді, під вашим паролем. Застосунок перевіряє, що це саме posting key.</p>
+  <div class="row"><button id="vault" type="button">Зберегти ключ під паролем</button><button id="lock" type="button">Заблокувати</button></div>
+  <div class="row" style="margin-top:8px"><button id="dgo" type="button">Діагностика</button><button id="dgcopy" type="button">Копіювати звіт</button></div>
+  <pre id="dg" style="white-space:pre-wrap;font-size:12px"></pre>
 </details>
 </main>
 
@@ -180,8 +186,8 @@ const who = () => {
 };
 
 try {
-  $('#user').value = localStorage.getItem('hp_u') || localStorage.getItem('ht_u') || ''; $('#key').value = localStorage.getItem('hp_k') || localStorage.getItem('ht_k') || '';
-  $('#remember').checked = !!localStorage.getItem('hp_k');
+  $('#user').value = Sec.user() || localStorage.getItem('hp_u') || localStorage.getItem('ht_u') || '';
+  if (!Sec.has()) $('#key').value = localStorage.getItem('hp_k') || localStorage.getItem('ht_k') || '';
   $('#title').value = localStorage.getItem('hp_t') || ''; $('#body').value = localStorage.getItem('hp_b') || '';
 } catch (e) {}
 $('#title').oninput = () => { try { localStorage.setItem('hp_t', $('#title').value); } catch (e) {} };
@@ -292,7 +298,7 @@ $('#send').onclick = async () => {
       allow_votes: true, allow_curation_rewards: true, extensions: ben.length ? [[0, { beneficiaries: ben }]] : [] }]);
     await client.broadcast.sendOperations(ops, key);
     try {
-      if ($('#remember').checked) { localStorage.setItem('hp_u', author); localStorage.setItem('hp_k', $('#key').value.trim()); } else localStorage.removeItem('hp_k');
+      localStorage.setItem('hp_u', author);
       localStorage.removeItem('hp_t'); localStorage.removeItem('hp_b');
     } catch (e) {}
     { const dd = $('#dsel').value; if (dd) { drafts = drafts.filter(x => x.id !== dd); store.set('hp_drafts', drafts); refresh(); } }
@@ -554,6 +560,38 @@ $('#rbtn').onclick = () => {
   if (new Date(v) < new Date()) return say($('#status'), 'Цей час уже минув.', 'err');
   downloadIcs(v, 'Опублікувати на Hive: ' + ($('#title').value.trim() || 'новий пост'), 'Відкрийте форму Hive і опублікуйте збережену чернетку.');
   say($('#status'), 'Файл нагадування створено. Відкрийте його, щоб додати подію в календар.', 'ok');
+};
+
+/* ---- безпека входу ---- */
+async function unlockPost() { const r = await Sec.unlockUI(); if (r) { $('#user').value = r.user; $('#key').value = r.wif; } }
+$('#vault').onclick = async () => {
+  try {
+    const { author } = who(), k = $('#key').value.trim(), v = await Sec.verify(client, author, k);
+    if (!v.ok) throw new Error(v.msg);
+    const ok = await Sec.setupUI(author, k);
+    say($('#status'), ok ? 'Ключ збережено під паролем.' : 'Ключ лишається лише на цей сеанс.', ok ? 'ok' : '');
+  } catch (e) { say($('#status'), e.message || String(e), 'err'); }
+};
+$('#lock').onclick = () => { $('#key').value = ''; say($('#status'), 'Заблоковано.'); if (Sec.has()) unlockPost(); };
+$('#key').onchange = async () => {
+  const k = $('#key').value.trim(), u = $('#user').value.trim().replace(/^@/, '').toLowerCase(); if (!k || !u) return;
+  try { const v = await Sec.verify(client, u, k); if (!v.ok) { $('#key').value = ''; say($('#status'), v.msg, 'err'); } } catch (e) {}
+};
+Sec.autolock(() => { if (Sec.has() && $('#key').value) { $('#key').value = ''; unlockPost(); } }, 10);
+if (Sec.has()) unlockPost();
+
+/* ---- діагностика ---- */
+$('#dgo').onclick = async () => {
+  const b = $('#dgo'), el = $('#dg'); b.disabled = true; el.textContent = '';
+  try {
+    await Diag.run({ client, me: $('#user').value.trim().replace(/^@/, '').toLowerCase(), key: $('#key').value.trim(), out: l => { el.textContent += l + '\n'; } });
+  } catch (e) { el.textContent += 'Помилка діагностики: ' + (e.message || e) + '\n'; }
+  b.disabled = false;
+};
+$('#dgcopy').onclick = async () => {
+  const b = $('#dgcopy');
+  try { await navigator.clipboard.writeText($('#dg').textContent); b.textContent = 'Скопійовано'; } catch (e) { b.textContent = 'Не вдалося'; }
+  setTimeout(() => { b.textContent = 'Копіювати звіт'; }, 2500);
 };
 
 if (location.hash === '#stats') { show('t4'); loadStats(); }

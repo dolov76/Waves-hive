@@ -1,5 +1,5 @@
-const CACHE = 'hive-app-v2';
-const SHELL = ['./', './index.html', './hive-post.html', './manifest.json', './manifest-post.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './logo.png'];
+const CACHE = 'hive-app-v4';
+const SHELL = ['./', './index.html', './hive-post.html', './secure.js', './diag.js', './manifest.json', './manifest-post.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './logo.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
 });

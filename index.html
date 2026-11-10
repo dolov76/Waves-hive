@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src *; connect-src *; frame-src https://play.3speak.tv https://www.youtube-nocookie.com https://player.vimeo.com https://odysee.com https://rumble.com https://www.bitchute.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101010" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,8 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
+<script src="secure.js"></script>
+<script src="diag.js"></script>
 <style>
   :root { --bg:#fff; --fg:#101010; --mut:#8a8a8e; --line:#dcdcdf; --soft:#f3f3f5; --like:#e0245e; }
   @media (prefers-color-scheme: dark) { :root { --bg:#101010; --fg:#f3f5f7; --mut:#777; --line:#2e2e30; --soft:#1c1c1e; --like:#ff4d79; } }
@@ -143,12 +146,21 @@
 
 <div id="lb" hidden><img id="lbi" alt=""><button id="lbx" aria-label="Закрити">×</button><span id="lbc"></span></div>
 
+<div class="sheet" id="diag"><div>
+  <div class="top"><button data-close>Закрити</button><b>Діагностика</b><button class="p" id="dgo">Запустити</button></div>
+  <pre id="dg" style="white-space:pre-wrap;font-size:12px;margin:10px 0">Натисніть «Запустити». Звіт не містить ключів.</pre>
+  <button id="dgcopy" type="button" class="bk" style="width:100%">Копіювати звіт</button>
+</div></div>
+
 <div class="sheet" id="login"><div>
   <div class="top"><button data-close>Закрити</button><b>Вхід</b><button class="p" id="save">Зберегти</button></div>
   <input id="u" placeholder="Нік" autocapitalize="none" style="margin-top:10px">
   <input id="k" type="password" placeholder="Posting key (5K…)" style="margin:8px 0">
   <input id="k3s" type="password" placeholder="API-ключ 3Speak для відео (необов'язково)" style="margin:0 0 8px">
-  <p style="color:var(--mut);font-size:13px;margin:4px 0 0">Тільки posting key. Він зберігається в браузері цього пристрою.</p>
+  <div id="lerr" class="sm err" style="min-height:1.3em"></div>
+  <p style="color:var(--mut);font-size:13px;margin:4px 0 8px">Тільки posting key: застосунок перевіряє, що це саме він. Після входу ключ шифрується паролем і зберігається лише на цьому пристрої.</p>
+  <button id="logout" type="button" class="bk">Вийти й видалити ключ</button>
+  <button id="dgopen" type="button" class="bk">Діагностика</button>
 </div></div>
 
 <script>
@@ -156,7 +168,8 @@ const $ = s => document.querySelector(s);
 const client = new dhive.Client(['https://api.hive.blog','https://api.deathwing.me','https://anyx.io']);
 const HOSTS = ['hive.flow','ecency.waves'];
 let me = '', key = null, container = null;
-try { me = localStorage.getItem('ht_u') || ''; const k = localStorage.getItem('ht_k'); if (k) key = dhive.PrivateKey.fromString(k); } catch (e) {}
+let legacyKey = '';
+try { me = Sec.user() || localStorage.getItem('ht_u') || ''; legacyKey = (!Sec.has() && localStorage.getItem('ht_k')) || ''; if (legacyKey) key = dhive.PrivateKey.fromString(legacyKey); } catch (e) {}
 const refreshAcc = () => $('#acc').textContent = me ? '@' + me : 'Увійти';
 refreshAcc();
 
@@ -252,7 +265,7 @@ function showCost() {
   el.textContent = (el.dataset.mana || '') + (el.dataset.mana ? ' · ' : '') + `витрата ≈ ${(($('#vr').value) * 0.02).toFixed(2)}% сили`;
 }
 function vote(p, btn) {
-  if (!me || !key) return $('#login').classList.add('open');
+  if (!me || !key) return needLogin();
   pendV = { p, btn, had: btn.classList.contains('on') };
   let w = 100; try { w = parseInt(localStorage.getItem('ht_w') || '100', 10) || 100; } catch (e) {}
   const el = $('#vp'); el.dataset.mana = ''; delete el.dataset.err; el.className = 'sm';
@@ -302,7 +315,7 @@ async function toggleThread(p, slot) {
 }
 
 async function publish(text, pa, pp, prefix, opt = {}) {
-  if (!me || !key) { $('#login').classList.add('open'); return null; }
+  if (!me || !key) { needLogin(); return null; }
   const permlink = prefix + Date.now().toString(36);
   try {
     const ops = [['comment', { parent_author: pa, parent_permlink: pp, author: me, permlink, title: '', body: text,
@@ -317,7 +330,7 @@ async function fillCommunities(q) {
   const sel = $('#comm'); let list = [];
   try {
     if (q) list = ((await client.call('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
-    else { if (!me) return $('#login').classList.add('open'); list = ((await client.call('bridge', 'list_subscriptions', { account: me })) || []).map(c => [c[0], c[1]]); }
+    else { if (!me) return needLogin(); list = ((await client.call('bridge', 'list_subscriptions', { account: me })) || []).map(c => [c[0], c[1]]); }
   } catch (e) { return msg('Спільноти: ' + (e.message || e), true); }
   sel.innerHTML = ''; sel.append(new Option('Без спільноти', ''));
   list.forEach(([n, t]) => sel.append(new Option(`${t} (${n})`, n)));
@@ -608,7 +621,7 @@ async function openProfile(account) {
     const label = () => { fol.textContent = on ? 'Відписатися' : 'Підписатися'; };
     label(); fol.hidden = false;
     fol.onclick = async () => {
-      if (!key) return $('#login').classList.add('open');
+      if (!key) return needLogin();
       fol.disabled = true; $('#perr').textContent = '';
       try {
         await client.broadcast.json({ id: 'follow', json: JSON.stringify(['follow', { follower: me, following: account, what: on ? [] : ['blog'] }]),
@@ -752,7 +765,7 @@ async function attach(ta, files, a, b, st) {
 }
 
 function pickPhotos(ta, st) {
-  if (!me || !key) return $('#login').classList.add('open');
+  if (!me || !key) return needLogin();
   const a = ta.selectionStart, b = ta.selectionEnd;
   const f = document.createElement('input');
   f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
@@ -764,12 +777,16 @@ $('#pick').onclick = () => pickPhotos($('#text'), $('#up'));
 $('#fab').onclick = () => { if (sect === 'posts') location.href = 'hive-post.html'; else $('#compose').classList.add('open'); };
 $('#acc').onclick = () => { $('#u').value = me; $('#login').classList.add('open'); };
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.sheet').classList.remove('open'));
-$('#save').onclick = () => {
+$('#save').onclick = async () => {
+  const u = $('#u').value.trim().replace(/^@/, '').toLowerCase(), k = $('#k').value.trim(), btn = $('#save'), le = $('#lerr');
+  le.textContent = ''; if (!u || !k) { le.textContent = 'Введіть нік і posting key.'; return; }
+  btn.disabled = true;
   try {
-    me = $('#u').value.trim().replace(/^@/, ''); key = dhive.PrivateKey.fromString($('#k').value.trim());
-    localStorage.setItem('ht_u', me); localStorage.setItem('ht_k', $('#k').value.trim());
-    $('#k').value = ''; $('#login').classList.remove('open'); refreshAcc(); unread();
-  } catch (e) { msg('Невірний ключ.', true); }
+    const v = await Sec.verify(client, u, k); if (!v.ok) throw new Error(v.msg);
+    me = u; key = dhive.PrivateKey.fromString(k); $('#k').value = ''; $('#login').classList.remove('open'); refreshAcc(); unread();
+    if (await Sec.setupUI(u, k)) { localStorage.removeItem('ht_k'); msg('Ключ збережено під паролем.'); }
+  } catch (e) { le.textContent = e.message || String(e); }
+  btn.disabled = false;
 };
 $('#send').onclick = async () => {
   const t = $('#text').value.trim(); if (!t || !container) return;
@@ -789,7 +806,7 @@ async function unread() {
   } catch (e) {}
 }
 async function openNotes() {
-  if (!me) return $('#login').classList.add('open');
+  if (!me) return needLogin();
   $('#notes').classList.add('open'); $('#nl').textContent = 'Завантаження…';
   try { notes = (await client.call('bridge', 'account_notifications', { account: me, limit: 50 })) || []; renderNotes(); }
   catch (e) { $('#nl').textContent = 'Не вдалося завантажити: ' + (e.message || e); }
@@ -851,7 +868,7 @@ async function fetchComments(a) {
   return all;
 }
 async function openStats() {
-  if (!me) return $('#login').classList.add('open');
+  if (!me) return needLogin();
   $('#stats').classList.add('open'); const box = $('#sl'); box.textContent = 'Завантаження…';
   try {
     const r = await fetchComments(me);
@@ -930,7 +947,7 @@ try { $('#k3s').value = localStorage.getItem('ht_3s') || ''; } catch (e) {}
 $('#k3s').onchange = () => { try { localStorage.setItem('ht_3s', $('#k3s').value.trim()); } catch (e) {} };
 const upOut = (t, c) => { $('#up').textContent = t; $('#up').className = c || ''; };
 $('#vpick').onclick = () => {
-  if (!me || !key) return $('#login').classList.add('open');
+  if (!me || !key) return needLogin();
   const k = $('#k3s').value.trim();
   if (!k) return upOut('Спочатку вкажіть API-ключ 3Speak у вікні входу.', 'err');
   pickVideo($('#text'), me, k, upOut);
@@ -1001,6 +1018,31 @@ window.addEventListener('popstate', () => {
   if (top) { skipBack++; if (top.id === 'lb') closeLb(); else top.classList.remove('open'); }
 });
 loadFeed();
+
+/* ---- безпека входу ---- */
+function needLogin() { if (me && !key && Sec.has()) unlockFlow(); else $('#login').classList.add('open'); }
+async function unlockFlow() {
+  const r = await Sec.unlockUI();
+  if (r) { me = r.user; key = dhive.PrivateKey.fromString(r.wif); refreshAcc(); unread(); }
+}
+$('#logout').onclick = () => { if (confirm('Видалити ключ з цього пристрою й вийти?')) { Sec.clear(); location.reload(); } };
+Sec.autolock(() => { if (key && Sec.has()) { key = null; unlockFlow(); } }, 10);
+if (Sec.has()) unlockFlow();
+else if (legacyKey) { $('#u').value = me; $('#k').value = legacyKey; $('#lerr').textContent = 'Ваш ключ зберігався без захисту. Натисніть «Зберегти», щоб зашифрувати його паролем.'; $('#login').classList.add('open'); }
+
+/* ---- діагностика ---- */
+$('#dgopen').onclick = () => { $('#login').classList.remove('open'); $('#diag').classList.add('open'); };
+$('#dgo').onclick = async () => {
+  const b = $('#dgo'), el = $('#dg'); b.disabled = true; el.textContent = '';
+  try { await Diag.run({ client, me, key: key ? key.toString() : '', out: l => { el.textContent += l + '\n'; } }); }
+  catch (e) { el.textContent += 'Помилка діагностики: ' + (e.message || e) + '\n'; }
+  b.disabled = false;
+};
+$('#dgcopy').onclick = async () => {
+  const b = $('#dgcopy');
+  try { await navigator.clipboard.writeText($('#dg').textContent); b.textContent = 'Скопійовано'; } catch (e) { b.textContent = 'Не вдалося: виділіть текст вручну'; }
+  setTimeout(() => { b.textContent = 'Копіювати звіт'; }, 2500);
+};
 
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
