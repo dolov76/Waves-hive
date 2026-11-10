@@ -122,7 +122,7 @@
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const client = new dhive.Client(['https://api.hive.blog','https://api.deathwing.me','https://anyx.io']);
+const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network', 'https://hive-api.arcange.eu'], { timeout: 10000 });
 const say = (el, m, c) => { el.textContent = m; el.className = c || ''; };
 const md = t => {
   const d = document.createElement('div');
@@ -144,7 +144,7 @@ function richify(root) {
     if (src.startsWith('//')) src = 'https:' + src;
     if (src.startsWith('ipfs://')) src = 'https://ipfs.io/ipfs/' + src.slice(7);
     if (NATIVE.test(src)) src = src.replace(/^http:/i, 'https:');
-    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = 'https://images.hive.blog/0x0/' + src; }
+    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = src.replace(/^http:/i, 'https:'); }
     else im.src = src;
     im.referrerPolicy = 'no-referrer';
     im.loading = 'lazy'; im.removeAttribute('width'); im.removeAttribute('height');
@@ -174,7 +174,7 @@ document.addEventListener('click', e => { const b = e.target.closest && e.target
 document.addEventListener('error', e => {
   const im = e.target; if (!im || im.tagName !== 'IMG' || im.closest('.vp')) return;
   const step = +(im.dataset.t || 0);
-  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = im.dataset.o; return; }
+  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = 'https://images.hive.blog/0x0/' + im.dataset.o; return; }
   if (step <= 1 && /\/\/images\.ecency\.com\//i.test(im.src)) { im.dataset.t = 2; im.src = im.src.replace('//images.ecency.com/', '//img.ecency.com/'); return; }
   im.alt = 'Фото недоступне'; im.classList.add('imgfail');
 }, true);

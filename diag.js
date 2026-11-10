@@ -37,7 +37,7 @@ const Diag = (() => {
       if (miss.length) throw new Error('не завантажено: ' + miss.join(', ')); return 'усі завантажені';
     });
 
-    for (const u of ['https://api.hive.blog', 'https://api.deathwing.me', 'https://anyx.io']) {
+    for (const u of ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network', 'https://hive-api.arcange.eu']) {
       await S('Вузол ' + u.replace('https://', ''), async () => {
         const g = await new dhive.Client([u], { timeout: 8000 }).database.getDynamicGlobalProperties();
         return `блок ${g.head_block_number}, відставання ${Math.max(0, Math.round((Date.now() - new Date(g.time + 'Z')) / 1000))} с`;
@@ -77,7 +77,8 @@ const Diag = (() => {
 
     await S('Фото images.hive.blog', () => imgOk('https://images.hive.blog/u/hiveio/avatar/small'));
     await S('Фото images.ecency.com', () => imgOk('https://images.ecency.com/u/ecency/avatar/small'));
-    await S('Проксі фото Hive', () => imgOk('https://images.hive.blog/0x0/https://images.hive.blog/u/hiveio/avatar/small'));
+    await S('Фото стороннього сайту (напряму)', () => imgOk('https://www.google.com/favicon.ico'));
+    await S('Фото стороннього сайту (через проксі Hive)', () => imgOk('https://images.hive.blog/0x0/https://www.google.com/favicon.ico'));
     await S('Сервіс фото images.hive.blog (завантаження)', () => reach('https://images.hive.blog/'));
     await S('3Speak embed (завантаження відео)', () => reach('https://embed.3speak.tv/video/diag'));
 

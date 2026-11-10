@@ -165,7 +165,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const client = new dhive.Client(['https://api.hive.blog','https://api.deathwing.me','https://anyx.io']);
+const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network', 'https://hive-api.arcange.eu'], { timeout: 10000 });
 const HOSTS = ['hive.flow','ecency.waves'];
 let me = '', key = null, container = null;
 let legacyKey = '';
@@ -196,7 +196,7 @@ function richify(root) {
     if (src.startsWith('//')) src = 'https:' + src;
     if (src.startsWith('ipfs://')) src = 'https://ipfs.io/ipfs/' + src.slice(7);
     if (NATIVE.test(src)) src = src.replace(/^http:/i, 'https:');
-    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = 'https://images.hive.blog/0x0/' + src; }
+    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = src.replace(/^http:/i, 'https:'); }
     else im.src = src;
     im.referrerPolicy = 'no-referrer';
     im.loading = 'lazy'; im.removeAttribute('width'); im.removeAttribute('height');
@@ -226,7 +226,7 @@ document.addEventListener('click', e => { const b = e.target.closest && e.target
 document.addEventListener('error', e => {
   const im = e.target; if (!im || im.tagName !== 'IMG' || im.closest('.vp')) return;
   const step = +(im.dataset.t || 0);
-  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = im.dataset.o; return; }
+  if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = 'https://images.hive.blog/0x0/' + im.dataset.o; return; }
   if (step <= 1 && /\/\/images\.ecency\.com\//i.test(im.src)) { im.dataset.t = 2; im.src = im.src.replace('//images.ecency.com/', '//img.ecency.com/'); return; }
   im.alt = 'Фото недоступне'; im.classList.add('imgfail');
 }, true);
@@ -420,7 +420,7 @@ async function fillMore() {
   const more = $('#more');
   try {
     let rest = viewList().filter(x => !rendered.has(keyOf(x))), loads = 0;
-    while ((mode === 'trend' ? true : rest.length < PAGE) && ci < limitC() && loads < 3) {
+    while ((mode === 'trend' ? true : rest.length < PAGE) && ci < limitC() && loads < (mode === 'new' || mode === 'trend' ? 3 : 8)) {
       more.textContent = 'Завантаження…'; await loadCont(); loads++;
       rest = viewList().filter(x => !rendered.has(keyOf(x)));
     }
@@ -845,7 +845,7 @@ $('#nread').onclick = async () => {
 unread(); setInterval(unread, 90000);
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const STAT_HOSTS = [...HOSTS, 'peak.snaps', 'leothreads', 'liketu.moments'];
-const ALT = ['https://api.deathwing.me', 'https://anyx.io'].map(u => new dhive.Client([u]));
+const ALT = ['https://api.deathwing.me', 'https://api.openhive.network'].map(u => new dhive.Client([u], { timeout: 10000 }));
 async function acctPage(params) {
   let err;
   for (const c of [client, ...ALT]) {
