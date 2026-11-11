@@ -68,6 +68,7 @@
 <div class="tabs"><button id="t1" class="on" type="button">Новий пост</button><button id="t2" type="button">Коментарі</button><button id="t3" type="button">Сповіщення</button><button id="t4" type="button">Статистика</button></div>
 
 <section id="new">
+  <div id="editbar" class="cm" hidden><span id="edittxt"></span><div class="m">Спільнота, винагорода й бенефіціари при редагуванні не змінюються.</div><button id="editcancel" type="button" style="margin-top:6px">Скасувати редагування</button></div>
   <div class="row" style="margin-top:8px"><select id="dsel"><option value="">Чернетки…</option></select><button id="dsave" type="button">Зберегти</button><button id="ddel" type="button">Видалити</button></div>
   <label for="title">Заголовок</label><input id="title">
   <label for="body">Текст (Markdown)</label>
@@ -104,6 +105,7 @@
   <label for="url">Або посилання на пост</label>
   <div class="row"><input id="url" placeholder="https://hive.blog/@нік/permlink"><button id="open" type="button">Відкрити</button></div>
   <div id="cstatus" role="status"></div>
+  <button id="editbtn" type="button" hidden style="margin-top:8px">Редагувати цей пост</button>
   <div id="thread"></div>
 </section>
 
@@ -114,6 +116,7 @@
 
 <section id="sta" hidden>
   <div class="row" style="margin-top:8px"><button id="sload" type="button">Оновити статистику</button></div>
+  <div id="rew" style="margin-top:12px"></div>
   <div id="sstatus" role="status" style="margin-top:12px"></div><div id="sout"></div>
 </section>
 
@@ -124,6 +127,7 @@
   <div class="row"><button id="vault" type="button">Зберегти ключ під паролем</button><button id="lock" type="button">Заблокувати</button></div>
   <div class="row" style="margin-top:8px"><button id="dgo" type="button">Діагностика</button><button id="dgcopy" type="button">Копіювати звіт</button></div>
   <pre id="dg" style="white-space:pre-wrap;font-size:12px"></pre>
+  <p id="ver" style="font-size:13px;color:var(--mut)"></p>
 </details>
 </main>
 
@@ -131,7 +135,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network'], { timeout: 10000 });
-const say = (el, m, c) => { el.textContent = m; el.className = c || ''; };
+const say = (el, m, c) => { if (c === 'err' && m) Diag.log(m); el.textContent = m; el.className = c || ''; };
 const md = t => {
   const d = document.createElement('div');
   d.innerHTML = DOMPurify.sanitize(marked.parse(t, { breaks: true }), { ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'allow', 'frameborder'] });
@@ -305,12 +309,13 @@ $('#send').onclick = async () => {
   try {
     const { author, key } = who(), title = $('#title').value.trim(), body = $('#body').value.trim();
     let tags = $('#tags').value.toLowerCase().split(/\s+/).filter(Boolean);
-    const comm = $('#comm').value;
+    const comm = editing ? '' : $('#comm').value;
     if (comm) tags = [comm, ...tags.filter(t => t !== comm)];
     tags = tags.slice(0, 10);
+    if (editing) tags = [editing.parent, ...tags.filter(x => x !== editing.parent)].slice(0, 10);
     if (!title || !body || !tags.length) throw new Error('Потрібні заголовок, текст і хоча б один тег або спільнота.');
-    const ben = benefs(author), mode = $('#pay').value, permlink = 'post-' + Date.now().toString(36);
-    const ops = [['comment', { parent_author: '', parent_permlink: comm || tags[0], author, permlink, title, body,
+    const ben = editing ? [] : benefs(author), mode = editing ? '50' : $('#pay').value, permlink = editing ? editing.permlink : 'post-' + Date.now().toString(36);
+    const ops = [['comment', { parent_author: '', parent_permlink: editing ? editing.parent : (comm || tags[0]), author, permlink, title, body,
       json_metadata: JSON.stringify({ tags, app: 'my-hive-app/0.2', format: 'markdown' }) }]];
     if (mode !== '50' || ben.length) ops.push(['comment_options', { author, permlink,
       max_accepted_payout: mode === '0' ? '0.000 HBD' : '1000000.000 HBD', percent_hbd: mode === 'hp' ? 0 : 10000,
@@ -321,7 +326,7 @@ $('#send').onclick = async () => {
       localStorage.removeItem('hp_t'); localStorage.removeItem('hp_b');
     } catch (e) {}
     { const dd = $('#dsel').value; if (dd) { drafts = drafts.filter(x => x.id !== dd); store.set('hp_drafts', drafts); refresh(); } }
-    say(st, `Опубліковано: https://hive.blog/@${author}/${permlink}`, 'ok'); $('#title').value = ''; $('#body').value = '';
+    say(st, (editing ? 'Зміни збережено: ' : 'Опубліковано: ') + `https://hive.blog/@${author}/${permlink}`, 'ok'); if (editing) { editing = null; setEditUI(false); } $('#title').value = ''; $('#body').value = '';
   } catch (e) { say(st, 'Помилка: ' + (e.message || e), 'err'); }
   $('#send').disabled = false;
 };
@@ -354,11 +359,12 @@ function node(map, k, depth, root) {
   return el;
 }
 async function openPost(author, permlink) {
-  const st = $('#cstatus'); say(st, 'Завантаження…'); $('#thread').innerHTML = '';
+  const st = $('#cstatus'); say(st, 'Завантаження…'); $('#thread').innerHTML = ''; $('#editbtn').hidden = true; curPost = null;
   try {
     const map = await client.call('bridge', 'get_discussion', { author, permlink });
     const k = author + '/' + permlink; if (!map || !map[k]) throw new Error('пост не знайдено');
     const n = Object.keys(map).length - 1; $('#thread').append(node(map, k, 0)); say(st, `Коментарів: ${n}`);
+    curPost = { author, permlink }; $('#editbtn').hidden = author !== $('#user').value.trim().replace(/^@/, '').toLowerCase();
   } catch (e) { say(st, 'Не вдалося: ' + (e.message || e), 'err'); }
 }
 $('#reload').onclick = async () => {
@@ -417,19 +423,20 @@ async function loadStats() {
   const st = $('#sstatus'), out = $('#sout');
   try {
     const { author } = who(); say(st, 'Завантаження…'); out.innerHTML = '';
+    loadRewards(author).catch(() => {});
     const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 30 });
     const posts = (r || []).filter(p => p.author === author).map(p => {
       const tg = p.json_metadata && p.json_metadata.tags;
       return { title: p.title || p.permlink, votes: (p.stats && p.stats.total_votes) ?? (p.active_votes || []).length, com: p.children || 0,
         pay: Number(p.payout) || parseFloat(p.pending_payout_value) || 0, tags: Array.isArray(tg) ? tg : [],
-        hour: new Date(p.created + 'Z').getHours(), url: `https://hive.blog/@${p.author}/${p.permlink}` };
+        pend: p.is_paidout ? 0 : (parseFloat(p.pending_payout_value) || 0), hour: new Date(p.created + 'Z').getHours(), url: `https://hive.blog/@${p.author}/${p.permlink}` };
     });
     if (!posts.length) return say(st, 'Постів не знайдено.');
     const sum = (a, f) => a.reduce((s, x) => s + f(x), 0), avg = (a, f) => a.length ? sum(a, f) / a.length : 0;
     const bars = (rows) => { const mx = Math.max(...rows.map(x => x[1]), 0.0001);
       return rows.map(([n, v, c]) => `<div>${esc(n)} <span class="m">· ${v.toFixed(1)} голосів у середньому, постів: ${c}</span></div><div class="bar"><i style="width:${Math.round(v / mx * 100)}%"></i></div>`).join(''); };
     let h = `<div class="kpi"><div><b>${posts.length}</b>постів</div><div><b>${avg(posts, x => x.votes).toFixed(1)}</b>голосів у середньому</div>
-      <div><b>${avg(posts, x => x.com).toFixed(1)}</b>коментарів у середньому</div><div><b>${sum(posts, x => x.pay).toFixed(2)}</b>виплат, HBD</div></div>`;
+      <div><b>${avg(posts, x => x.com).toFixed(1)}</b>коментарів у середньому</div><div><b>${sum(posts, x => x.pay).toFixed(2)}</b>виплат, HBD</div><div><b>${sum(posts, x => x.pend).toFixed(2)}</b>очікується, HBD</div></div>`;
     const top = [...posts].sort((a, b) => b.votes - a.votes).slice(0, 5);
     h += '<h3 class="s">Найкращі пости</h3>' + top.map(x => `<div class="cm"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="m">голосів: ${x.votes} · коментарів: ${x.com} · ${x.pay.toFixed(2)} HBD</div></div>`).join('');
     const tg = {}; posts.forEach(x => x.tags.forEach(t => (tg[t] = tg[t] || []).push(x)));
@@ -652,6 +659,54 @@ function applyTheme(t, save) {
 }
 $('#theme').onclick = () => applyTheme(themeNow() === 'dark' ? 'light' : 'dark', true);
 applyTheme(themeNow(), false);
+
+/* ---- редагування поста, винагороди, версія ---- */
+let curPost = null, editing = null;
+function setEditUI(on) {
+  $('#editbar').hidden = !on;
+  document.querySelectorAll('#cq,#cfind,#cmine,#comm,#pay,#addben,.ben input,.ben button').forEach(x => { x.disabled = on; });
+  $('#send').textContent = on ? 'Зберегти зміни' : 'Опублікувати';
+}
+$('#editbtn').onclick = async () => {
+  if (!curPost) return;
+  try {
+    const p = await client.call('bridge', 'get_post', { author: curPost.author, permlink: curPost.permlink });
+    if (!p) throw new Error('пост не знайдено');
+    const jm = typeof p.json_metadata === 'string' ? JSON.parse(p.json_metadata || '{}') : (p.json_metadata || {});
+    const parent = p.category || (jm.tags && jm.tags[0]) || 'hive';
+    editing = { permlink: p.permlink, parent };
+    $('#title').value = p.title || ''; $('#body').value = p.body || ''; $('#tags').value = (jm.tags || []).filter(x => x !== parent).join(' ');
+    $('#edittxt').textContent = 'Редагування: ' + (p.title || p.permlink);
+    $('#title').oninput(); $('#body').oninput(); setEditUI(true); show('t1'); window.scrollTo(0, 0);
+  } catch (e) { say($('#cstatus'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); }
+};
+$('#editcancel').onclick = () => {
+  editing = null; setEditUI(false); $('#title').value = ''; $('#body').value = ''; $('#title').oninput(); $('#body').oninput();
+};
+async function loadRewards(author) {
+  const box = $('#rew'); box.innerHTML = '';
+  const [a, g] = await Promise.all([client.database.getAccounts([author]).then(r => r[0]), client.database.getDynamicGlobalProperties()]);
+  if (!a) return;
+  const hbd = parseFloat(a.reward_hbd_balance) || 0, hive = parseFloat(a.reward_hive_balance) || 0, vests = parseFloat(a.reward_vesting_balance) || 0;
+  const hp = vests * parseFloat(g.total_vesting_fund_hive) / parseFloat(g.total_vesting_shares);
+  const el = document.createElement('div'); el.className = 'cm';
+  const h = document.createElement('b'); h.textContent = 'Винагороди, що чекають на отримання'; el.append(h);
+  const t = document.createElement('div'); t.className = 'm'; t.textContent = `${hbd.toFixed(3)} HBD · ${hive.toFixed(3)} HIVE · ${(isFinite(hp) ? hp : 0).toFixed(3)} HP`; el.append(t);
+  if (hbd > 0 || hive > 0 || vests > 0) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'p'; b.textContent = 'Забрати винагороду';
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const { key } = who();
+        await client.broadcast.sendOperations([['claim_reward_balance', { account: author, reward_hive: a.reward_hive_balance, reward_hbd: a.reward_hbd_balance, reward_vests: a.reward_vesting_balance }]], key);
+        b.remove(); t.textContent += ' · отримано';
+      } catch (e) { say($('#sstatus'), 'Не вдалося забрати винагороду: ' + (e.message || e), 'err'); b.disabled = false; }
+    };
+    el.append(b);
+  }
+  box.append(el);
+}
+$('#ver').textContent = 'Версія ' + APP_VERSION;
 
 if (location.hash === '#stats') { show('t4'); loadStats(); }
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});

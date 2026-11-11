@@ -173,6 +173,7 @@
   <p style="color:var(--mut);font-size:13px;margin:4px 0 8px">Тільки posting key: застосунок перевіряє, що це саме він. Після входу ключ шифрується паролем і зберігається лише на цьому пристрої.</p>
   <button id="logout" type="button" class="bk">Вийти й видалити ключ</button>
   <button id="dgopen" type="button" class="bk">Діагностика</button>
+  <div class="sm" id="ver" style="margin-top:6px"></div>
 </div></div>
 
 <script>
@@ -185,7 +186,7 @@ try { me = Sec.user() || localStorage.getItem('ht_u') || ''; legacyKey = (!Sec.h
 const refreshAcc = () => $('#acc').textContent = me ? '@' + me : 'Увійти';
 refreshAcc();
 
-const msg = (t, err) => { $('#msg').textContent = t; $('#msg').className = err ? 'err' : ''; };
+const msg = (t, err) => { if (err && t) Diag.log(t); $('#msg').textContent = t; $('#msg').className = err ? 'err' : ''; };
 const ago = s => { const d = (Date.now() - new Date(s + 'Z')) / 1000;
   return d < 60 ? 'щойно' : d < 3600 ? Math.floor(d/60) + ' хв' : d < 86400 ? Math.floor(d/3600) + ' год' : Math.floor(d/86400) + ' д'; };
 const md = t => {
@@ -1115,6 +1116,7 @@ Sec.autolock(() => { if (key && Sec.has()) { key = null; unlockFlow(); } }, 10);
 if (Sec.has()) unlockFlow();
 else if (legacyKey) { $('#u').value = me; $('#k').value = legacyKey; $('#lerr').textContent = 'Ваш ключ зберігався без захисту. Натисніть «Зберегти», щоб зашифрувати його паролем.'; $('#login').classList.add('open'); }
 
+$('#ver').textContent = 'Версія ' + APP_VERSION;
 /* ---- діагностика ---- */
 $('#dgopen').onclick = () => { $('#login').classList.remove('open'); $('#diag').classList.add('open'); };
 $('#dgo').onclick = async () => {

@@ -1,6 +1,20 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
+const APP_VERSION = '2026.11.11-1';
 const Diag = (() => {
   const now = () => performance.now();
+  const KEY = 'hive_errlog';
+  const scrub = x => String(x).replace(/5[HJK][1-9A-HJ-NP-Za-km-z]{49}/g, '[ключ приховано]').slice(0, 300);
+  const errors = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } };
+  const log = m => {
+    try {
+      const l = errors(), t = new Date().toISOString().slice(0, 19), txt = scrub(m);
+      if (l.length && l[l.length - 1].m === txt) return;
+      l.push({ t, m: txt }); localStorage.setItem(KEY, JSON.stringify(l.slice(-30)));
+    } catch (e) {}
+  };
+  const clear = () => { try { localStorage.removeItem(KEY); } catch (e) {} };
+  window.addEventListener('error', e => log((e.message || 'помилка') + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')));
+  window.addEventListener('unhandledrejection', e => log('Promise: ' + ((e.reason && e.reason.message) || e.reason)));
   async function step(name, fn, out) {
     const t = now(); let line;
     try {
@@ -31,7 +45,7 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
     const lines = [];
     const log = l => { out(l); lines.push(l); };
     const S = async (n, f) => { lines.push(await step(n, f, out)); };
-    log('Hive діагностика · ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC');
+    log('Hive діагностика · ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC · версія ' + APP_VERSION);
 
     await S('Середовище', async () => `${location.protocol}//${location.host || 'локальний файл'}, secureContext=${window.isSecureContext}, онлайн=${navigator.onLine}`);
     await S('Сховище браузера', async () => { localStorage.setItem('_dg', '1'); if (localStorage.getItem('_dg') !== '1') throw new Error('не читається'); localStorage.removeItem('_dg'); return 'ок'; });
@@ -90,8 +104,11 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
     await S('Сервіс фото images.hive.blog (завантаження)', () => reach('https://images.hive.blog/'));
     await S('3Speak embed (завантаження відео)', () => reach('https://embed.3speak.tv/video/diag'));
 
+    const errs = errors();
+    log(errs.length ? '— Останні помилки застосунку (' + errs.length + ') —' : '— Журнал помилок порожній —');
+    errs.slice(-10).forEach(x => log('! ' + x.t.slice(5, 16).replace('T', ' ') + ' ' + x.m));
     log('— кінець —');
     return lines.join('\n');
   }
-  return { run };
+  return { run, log, errors, clear };
 })();
