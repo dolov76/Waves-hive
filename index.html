@@ -17,6 +17,7 @@
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
 <script src="secure.js"></script>
 <script src="diag.js"></script>
+<script src="editor.js"></script>
 <style>
   :root { --bg:#fff; --fg:#101010; --mut:#8a8a8e; --line:#dcdcdf; --soft:#f3f3f5; --like:#e0245e; }
   @media (prefers-color-scheme: dark) { :root { --bg:#101010; --fg:#f3f5f7; --mut:#777; --line:#2e2e30; --soft:#1c1c1e; --like:#ff4d79; } }
@@ -762,7 +763,8 @@ async function attach(ta, files, a, b, st) {
   for (let i = 0; i < files.length; i++) {
     st.textContent = `Завантажую ${i + 1} з ${files.length}…`; st.className = '';
     try {
-      const url = await uploadImage(files[i]);
+      const ed = await Editor.edit(files[i], (i + 1) + ' з ' + files.length); if (!ed) continue;
+      const url = await uploadImage(ed);
       const ins = `\n![](${url})\n`;
       ta.value = ta.value.slice(0, pos) + ins + ta.value.slice(end);
       pos = end = pos + ins.length;

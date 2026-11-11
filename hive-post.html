@@ -17,6 +17,7 @@
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
 <script src="secure.js"></script>
 <script src="diag.js"></script>
+<script src="editor.js"></script>
 <style>
   :root { --bg:#f6f7f9; --fg:#1b1f24; --mut:#667085; --card:#fff; --line:#d5d9e0; --acc:#c8102e; --ok:#13795b; }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --fg:#e8eaee; --mut:#9aa3b2; --card:#1d2128; --line:#333a45; --acc:#ff5470; --ok:#4cc9a0; } }
@@ -229,21 +230,24 @@ async function uploadImage(file, w) {
   if (!r.ok) throw new Error('сервер відповів ' + r.status);
   const j = await r.json(); if (!j.url) throw new Error('немає посилання у відповіді'); return j.url;
 }
-$('#pick').onclick = () => {
-  let w; try { w = who(); } catch (e) { return say($('#up'), e.message, 'err'); }
-  const ta = $('#body'); let pos = ta.selectionStart, end = ta.selectionEnd;
-  const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
-  f.onchange = async () => {
-    const fl = [...f.files];
-    for (let i = 0; i < fl.length; i++) {
+async function addPhotos(fl, w, pos, end) {
+  const ta = $('#body');
+  for (let i = 0; i < fl.length; i++) {
+    try {
+      const ed = await Editor.edit(fl[i], `${i + 1} з ${fl.length}`); if (!ed) continue;
       say($('#up'), `Завантажую ${i + 1} з ${fl.length}…`);
-      try {
-        const ins = `\n![](${await uploadImage(fl[i], w)})\n`;
-        ta.value = ta.value.slice(0, pos) + ins + ta.value.slice(end); pos = end = pos + ins.length;
-      } catch (e) { return say($('#up'), 'Не вдалося: ' + e.message, 'err'); }
-    }
-    ta.focus(); ta.selectionStart = ta.selectionEnd = pos; ta.oninput(); say($('#up'), 'Фото додано');
-  };
+      const ins = `\n![](${await uploadImage(ed, w)})\n`;
+      ta.value = ta.value.slice(0, pos) + ins + ta.value.slice(end); pos = end = pos + ins.length;
+    } catch (e) { return say($('#up'), 'Не вдалося: ' + e.message, 'err'); }
+  }
+  ta.focus(); ta.selectionStart = ta.selectionEnd = pos; ta.oninput(); say($('#up'), 'Фото додано');
+}
+$('#pick').onclick = () => {
+  if (sharedFiles.length) return runShared();
+  let w; try { w = who(); } catch (e) { return say($('#up'), e.message, 'err'); }
+  const ta = $('#body'), pos = ta.selectionStart, end = ta.selectionEnd;
+  const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
+  f.onchange = () => addPhotos([...f.files], w, pos, end);
   f.click();
 };
 $('#toggle').onclick = () => {
@@ -586,7 +590,35 @@ $('#key').onchange = async () => {
   try { const v = await Sec.verify(client, u, k); if (!v.ok) { $('#key').value = ''; say($('#status'), v.msg, 'err'); } } catch (e) {}
 };
 Sec.autolock(() => { if (Sec.has() && $('#key').value) { $('#key').value = ''; unlockPost(); } }, 10);
-if (Sec.has()) unlockPost();
+
+/* ---- «Поділитися» з галереї ---- */
+let sharedFiles = [];
+async function loadShared() {
+  try {
+    const c = await caches.open('share-tmp'), mr = await c.match('meta'); if (!mr) return;
+    const m = await mr.json();
+    for (let i = 0; i < m.n; i++) {
+      const r = await c.match('f' + i);
+      if (r) sharedFiles.push(new File([await r.blob()], decodeURIComponent(r.headers.get('X-Name') || 'photo.jpg'), { type: r.headers.get('Content-Type') || 'image/jpeg' }));
+    }
+    await caches.delete('share-tmp');
+    if (m.title && !$('#title').value) { $('#title').value = m.title; $('#title').oninput(); }
+    const extra = [m.text, m.url].filter(Boolean).join('\n\n');
+    if (extra) { $('#body').value += ($('#body').value ? '\n\n' : '') + extra; $('#body').oninput(); }
+    history.replaceState(null, '', location.pathname);
+  } catch (e) { say($('#status'), 'Не вдалося прийняти спільне: ' + (e.message || e), 'err'); }
+}
+function runShared() {
+  if (!sharedFiles.length) return;
+  let w; try { w = who(); } catch (e) { return say($('#up'), 'Фото з «Поділитися» чекають: введіть нік і ключ, потім натисніть «Додати фото».', 'err'); }
+  const f = sharedFiles; sharedFiles = [];
+  const n = $('#body').value.length; addPhotos(f, w, n, n);
+}
+(async () => {
+  if (location.search.includes('share=1')) await loadShared();
+  if (Sec.has()) await unlockPost();
+  runShared();
+})();
 
 /* ---- діагностика ---- */
 $('#dgo').onclick = async () => {
