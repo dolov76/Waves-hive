@@ -2,6 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
+<script>try{var t=localStorage.getItem('hive_theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src *; connect-src *; frame-src https://play.3speak.tv https://www.youtube-nocookie.com https://player.vimeo.com https://odysee.com https://rumble.com https://www.bitchute.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest-post.json">
@@ -19,8 +20,9 @@
 <script src="diag.js"></script>
 <script src="editor.js"></script>
 <style>
-  :root { --bg:#f6f7f9; --fg:#1b1f24; --mut:#667085; --card:#fff; --line:#d5d9e0; --acc:#c8102e; --ok:#13795b; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --fg:#e8eaee; --mut:#9aa3b2; --card:#1d2128; --line:#333a45; --acc:#ff5470; --ok:#4cc9a0; } }
+  :root { color-scheme:light; --bg:#f6f7f9; --fg:#1b1f24; --mut:#667085; --card:#fff; --line:#d5d9e0; --acc:#c8102e; --ok:#13795b; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark; --bg:#14171c; --fg:#e8eaee; --mut:#9aa3b2; --card:#1d2128; --line:#333a45; --acc:#ff5470; --ok:#4cc9a0; } }
+  :root[data-theme="dark"] { color-scheme:dark; --bg:#14171c; --fg:#e8eaee; --mut:#9aa3b2; --card:#1d2128; --line:#333a45; --acc:#ff5470; --ok:#4cc9a0; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,sans-serif; padding:12px; }
   main { max-width:640px; margin:0 auto; }
@@ -48,12 +50,17 @@
   .vp b { position:relative; width:56px; height:56px; border-radius:50%; background:rgba(0,0,0,.65); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; }
   .vp iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
   .imgfail { display:block; min-height:48px; padding:12px; background:rgba(128,128,128,.15); color:#888; font-size:13px; border-radius:8px; }
+  #preview pre, .cm pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:8px; overflow-x:auto; font-size:13px; }
+  #preview code, .cm code { background:var(--bg); border-radius:4px; padding:1px 4px; font-size:.9em; } #preview pre code, .cm pre code { background:none; padding:0; }
+  #preview blockquote, .cm blockquote { margin:8px 0; padding-left:12px; border-left:3px solid var(--line); color:var(--mut); }
+  #preview a, .cm a { color:#3b82f6; overflow-wrap:anywhere; }
+  #preview table, .cm table { border-collapse:collapse; display:block; overflow-x:auto; } #preview th, #preview td, .cm th, .cm td { border:1px solid var(--line); padding:4px 8px; }
   details { margin-top:16px; }
 </style>
 </head>
 <body>
 <main>
-<h1><a href="index.html" style="color:inherit;text-decoration:none">← Hive · студія автора</a></h1>
+<div style="display:flex;justify-content:space-between;align-items:center"><h1><a href="index.html" style="color:inherit;text-decoration:none">← Hive · студія автора</a></h1><button id="theme" type="button" aria-label="Тема" style="padding:6px 10px">🌙</button></div>
 <div class="row">
   <div><label for="user">Нік</label><input id="user" autocapitalize="none" autocomplete="username"></div>
   <div><label for="key">Posting key</label><input id="key" type="password" autocomplete="off" placeholder="5K…"></div>
@@ -633,6 +640,18 @@ $('#dgcopy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#dg').textContent); b.textContent = 'Скопійовано'; } catch (e) { b.textContent = 'Не вдалося'; }
   setTimeout(() => { b.textContent = 'Копіювати звіт'; }, 2500);
 };
+
+/* ---- тема ---- */
+const themeNow = () => document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+function applyTheme(t, save) {
+  document.documentElement.dataset.theme = t;
+  if (save) { try { localStorage.setItem('hive_theme', t); } catch (e) {} }
+  $('#theme').textContent = t === 'dark' ? '☀️' : '🌙';
+  $('#theme').title = t === 'dark' ? 'Світла тема' : 'Темна тема';
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = t === 'dark' ? '#14171c' : '#ffffff'; });
+}
+$('#theme').onclick = () => applyTheme(themeNow() === 'dark' ? 'light' : 'dark', true);
+applyTheme(themeNow(), false);
 
 if (location.hash === '#stats') { show('t4'); loadStats(); }
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});

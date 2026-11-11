@@ -9,6 +9,7 @@ const Sec = (() => {
   st.textContent = `.sec-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
   .sec-box{background:#fff;color:#111;border-radius:14px;padding:18px;max-width:420px;width:100%;font:15px/1.4 system-ui,sans-serif}
   @media(prefers-color-scheme:dark){.sec-box{background:#1d1d20;color:#eee}}
+  html[data-theme="dark"] .sec-box{background:#1d1d20;color:#eee}html[data-theme="light"] .sec-box{background:#fff;color:#111}
   .sec-box p{margin:6px 0;font-size:13px;opacity:.8}.sec-box input{width:100%;padding:10px;margin:6px 0;font:inherit;border:1px solid #8885;border-radius:8px;background:transparent;color:inherit;box-sizing:border-box}
   .sec-e{color:#d33;min-height:1.3em;font-size:13px}.sec-b{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .sec-b button{padding:9px 14px;border-radius:8px;border:1px solid #8885;background:transparent;color:inherit;font:inherit}
