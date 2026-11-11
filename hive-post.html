@@ -65,6 +65,7 @@
   <div><label for="user">Нік</label><input id="user" autocapitalize="none" autocomplete="username"></div>
   <div><label for="key">Posting key</label><input id="key" type="password" autocomplete="off" placeholder="5K…"></div>
 </div>
+<button id="unlock" type="button" hidden style="margin:6px 0">🔒 Розблокувати ключ</button>
 <div class="tabs"><button id="t1" class="on" type="button">Новий пост</button><button id="t2" type="button">Коментарі</button><button id="t3" type="button">Сповіщення</button><button id="t4" type="button">Статистика</button></div>
 
 <section id="new">
@@ -128,6 +129,8 @@
   <div class="row" style="margin-top:8px"><button id="dgo" type="button">Діагностика</button><button id="dgcopy" type="button">Копіювати звіт</button></div>
   <pre id="dg" style="white-space:pre-wrap;font-size:12px"></pre>
   <p id="ver" style="font-size:13px;color:var(--mut)"></p>
+  <label for="lockmin">Автоблокування, коли застосунок у фоні</label>
+  <select id="lockmin"><option value="10">10 хвилин</option><option value="30">30 хвилин</option><option value="120">2 години</option><option value="480">8 годин</option><option value="0">До закриття застосунку</option></select>
 </details>
 </main>
 
@@ -201,7 +204,7 @@ document.addEventListener('error', e => {
 const ago = s => { const d = (Date.now() - new Date(s + 'Z')) / 1000; return d < 3600 ? Math.max(1, Math.floor(d/60)) + ' хв' : d < 86400 ? Math.floor(d/3600) + ' год' : Math.floor(d/86400) + ' д'; };
 const who = () => {
   const author = $('#user').value.trim().replace(/^@/, '').toLowerCase(), k = $('#key').value.trim();
-  if (!author || !k) throw new Error('Введіть нік і posting key.');
+  if (!author || !k) throw new Error(Sec.has() && author && !k ? 'Ключ заблоковано: натисніть «Розблокувати ключ».' : 'Введіть нік і posting key.');
   return { author, key: dhive.PrivateKey.fromString(k) };
 };
 
@@ -589,7 +592,10 @@ $('#rbtn').onclick = () => {
 };
 
 /* ---- безпека входу ---- */
-async function unlockPost() { const r = await Sec.unlockUI(); if (r) { $('#user').value = r.user; $('#key').value = r.wif; } }
+const syncUnlockBtn = () => { $('#unlock').hidden = !Sec.has() || !!$('#key').value; };
+async function silentPost() { const r = await Sec.autoUnlock(); if (r) { $('#user').value = r.user; $('#key').value = r.wif; } syncUnlockBtn(); }
+async function unlockPost() { const r = (await Sec.autoUnlock()) || await Sec.unlockUI(); if (r) { $('#user').value = r.user; $('#key').value = r.wif; } syncUnlockBtn(); }
+$('#unlock').onclick = unlockPost;
 $('#vault').onclick = async () => {
   try {
     const { author } = who(), k = $('#key').value.trim(), v = await Sec.verify(client, author, k);
@@ -598,12 +604,12 @@ $('#vault').onclick = async () => {
     say($('#status'), ok ? 'Ключ збережено під паролем.' : 'Ключ лишається лише на цей сеанс.', ok ? 'ok' : '');
   } catch (e) { say($('#status'), e.message || String(e), 'err'); }
 };
-$('#lock').onclick = () => { $('#key').value = ''; say($('#status'), 'Заблоковано.'); if (Sec.has()) unlockPost(); };
+$('#lock').onclick = async () => { $('#key').value = ''; await Sec.lockNow(); say($('#status'), 'Заблоковано. Наступного разу знадобиться пароль.'); syncUnlockBtn(); };
 $('#key').onchange = async () => {
   const k = $('#key').value.trim(), u = $('#user').value.trim().replace(/^@/, '').toLowerCase(); if (!k || !u) return;
   try { const v = await Sec.verify(client, u, k); if (!v.ok) { $('#key').value = ''; say($('#status'), v.msg, 'err'); } } catch (e) {}
 };
-Sec.autolock(() => { if (Sec.has() && $('#key').value) { $('#key').value = ''; unlockPost(); } }, 10);
+Sec.autolock(() => { if (Sec.has() && $('#key').value) { $('#key').value = ''; syncUnlockBtn(); } });
 
 /* ---- «Поділитися» з галереї ---- */
 let sharedFiles = [];
@@ -630,7 +636,7 @@ function runShared() {
 }
 (async () => {
   if (location.search.includes('share=1')) await loadShared();
-  if (Sec.has()) await unlockPost();
+  if (Sec.has()) await silentPost();
   runShared();
 })();
 
@@ -707,6 +713,7 @@ async function loadRewards(author) {
   box.append(el);
 }
 $('#ver').textContent = 'Версія ' + APP_VERSION;
+$('#lockmin').value = String(Sec.lockMin()); $('#lockmin').onchange = () => Sec.setLockMin($('#lockmin').value);
 
 if (location.hash === '#stats') { show('t4'); loadStats(); }
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});

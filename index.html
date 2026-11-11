@@ -174,6 +174,9 @@
   <button id="logout" type="button" class="bk">Вийти й видалити ключ</button>
   <button id="dgopen" type="button" class="bk">Діагностика</button>
   <div class="sm" id="ver" style="margin-top:6px"></div>
+  <label class="sm" style="display:block;margin-top:10px">Автоблокування, коли застосунок у фоні
+    <select id="lockmin"><option value="10">10 хвилин</option><option value="30">30 хвилин</option><option value="120">2 години</option><option value="480">8 годин</option><option value="0">До закриття застосунку</option></select>
+  </label>
 </div></div>
 
 <script>
@@ -1108,15 +1111,16 @@ loadFeed();
 /* ---- безпека входу ---- */
 function needLogin() { if (me && !key && Sec.has()) unlockFlow(); else $('#login').classList.add('open'); }
 async function unlockFlow() {
-  const r = await Sec.unlockUI();
-  if (r) { me = r.user; key = dhive.PrivateKey.fromString(r.wif); refreshAcc(); unread(); }
+  const r = (await Sec.autoUnlock()) || await Sec.unlockUI();
+  if (r) { me = r.user; key = dhive.PrivateKey.fromString(r.wif); refreshAcc(); unread(); msg('Розблоковано. Повторіть дію.'); }
 }
 $('#logout').onclick = () => { if (confirm('Видалити ключ з цього пристрою й вийти?')) { Sec.clear(); location.reload(); } };
-Sec.autolock(() => { if (key && Sec.has()) { key = null; unlockFlow(); } }, 10);
-if (Sec.has()) unlockFlow();
+Sec.autolock(() => { if (key && Sec.has()) key = null; });
+if (Sec.has()) Sec.autoUnlock().then(r => { if (r) { me = r.user; key = dhive.PrivateKey.fromString(r.wif); refreshAcc(); unread(); } });
 else if (legacyKey) { $('#u').value = me; $('#k').value = legacyKey; $('#lerr').textContent = 'Ваш ключ зберігався без захисту. Натисніть «Зберегти», щоб зашифрувати його паролем.'; $('#login').classList.add('open'); }
 
 $('#ver').textContent = 'Версія ' + APP_VERSION;
+$('#lockmin').value = String(Sec.lockMin()); $('#lockmin').onchange = () => Sec.setLockMin($('#lockmin').value);
 /* ---- діагностика ---- */
 $('#dgopen').onclick = () => { $('#login').classList.remove('open'); $('#diag').classList.add('open'); };
 $('#dgo').onclick = async () => {
