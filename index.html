@@ -94,6 +94,7 @@
   .body blockquote { margin:8px 0; padding-left:12px; border-left:3px solid var(--line); color:var(--mut); }
   .body table { border-collapse:collapse; display:block; overflow-x:auto; } .body th, .body td { border:1px solid var(--line); padding:4px 8px; }
   .body a { color:#3b82f6; overflow-wrap:anywhere; }
+  #ptabs { display:flex; gap:6px; margin:6px 0 4px; } #ptabs button { flex:1; background:none; border:0; border-bottom:2px solid transparent; color:var(--mut); font:inherit; font-weight:600; padding:8px; border-radius:0; } #ptabs button.on { color:var(--fg); border-color:var(--fg); }
   #msg { padding:10px 16px; color:var(--mut); font-size:13px; } .err { color:var(--like); }
 </style>
 </head>
@@ -498,15 +499,14 @@ function postLike(x) {
   return Object.assign({}, x, { body, _body: x.body, net_votes: (x.stats && x.stats.total_votes) ?? (x.active_votes || []).length });
 }
 const POSTM = ['pfeed', 'pnew', 'ptrend', 'phot', 'pmine'];
-const isPostMode = m => m === 'comm' || m === 'ablog' || POSTM.includes(m);
+const isPostMode = m => m === 'comm' || POSTM.includes(m);
 const SECT_TABS = {
   posts: [['pfeed', 'Підписки'], ['pnew', 'Нові'], ['ptrend', 'Тренд'], ['phot', 'Гарячі'], ['comm', 'Спільноти'], ['pmine', 'Мій блог'], ['bm', 'Закладки']],
   waves: [['new', 'Нові'], ['trend', 'Тренд'], ['follow', 'Підписки'], ['mine', 'Мої'], ['search', 'Пошук'], ['bm', 'Закладки']]
 };
-let sect = 'posts', viewAcct = '';
+let sect = 'posts';
 function postReq() {
   const rk = (sort, tag) => ['get_ranked_posts', { sort, tag, limit: 20 }];
-  if (mode === 'ablog') return ['get_account_posts', { sort: 'blog', account: viewAcct, limit: 20 }];
   if (mode === 'comm') return rk('created', commSel);
   if (mode === 'pnew') return rk('created', '');
   if (mode === 'ptrend') return rk('trending', '');
@@ -538,7 +538,7 @@ async function fillCommunity() {
 }
 function renderTabs() {
   const nav = $('#tabs'); nav.innerHTML = '';
-  SECT_TABS[sect].concat(sect === 'posts' && viewAcct ? [['ablog', '@' + viewAcct]] : []).forEach(([m, t]) => { const b = document.createElement('button'); b.dataset.m = m; b.textContent = t; b.onclick = () => setMode(m); nav.append(b); });
+  SECT_TABS[sect].forEach(([m, t]) => { const b = document.createElement('button'); b.dataset.m = m; b.textContent = t; b.onclick = () => setMode(m); nav.append(b); });
   document.querySelectorAll('#sect button').forEach(b => b.className = b.dataset.s === sect ? 'on' : '');
 }
 function setSect(x) { sect = x; renderTabs(); setMode(x === 'posts' ? (me ? 'pfeed' : 'pnew') : 'new'); }
@@ -630,14 +630,24 @@ let zTop = 10;
 const bump = el => { zTop = Math.min(zTop + 1, 28); el.style.zIndex = zTop; };
 const parseMeta = x => { try { return JSON.parse(x || '{}'); } catch (e) { return {}; } };
 const repFromRaw = r => { r = Number(r); return isFinite(r) ? (r < 0 ? -1 : 1) * Math.max(Math.log10(Math.abs(r) || 1) - 9, 0) * 9 + 25 : null; };
+const profCache = new Map(); let pio = null;
+async function fetchProfile(account) {
+  const c = profCache.get(account); if (c && Date.now() - c.t < 300000) return c.v;
+  const [prof, acc] = await Promise.all([
+    client.call('bridge', 'get_profile', { account }).catch(() => null),
+    client.database.getAccounts([account]).then(r => r[0]).catch(() => null)
+  ]);
+  const v = { prof, acc }; if (prof || acc) profCache.set(account, { t: Date.now(), v }); return v;
+}
 async function openProfile(account) {
-  const sheet = $('#pview'); sheet.classList.add('open'); bump(sheet);
+  const sheet = $('#pview'), panel = sheet.firstElementChild;
+  if (pf && pf.account === account && sheet.classList.contains('open')) { bump(sheet); return; }
+  sheet.classList.add('open'); bump(sheet); panel.scrollTop = 0;
   const box = $('#pbox'); box.textContent = 'Завантаження…';
-  pf = { account, last: null, done: false, seen: new Set() };
-  let prof = null, rel = null, acc = null;
-  try { prof = await client.call('bridge', 'get_profile', { account }); } catch (e) {}
-  try { acc = (await client.database.getAccounts([account]))[0]; } catch (e) {}
-  if (me && me !== account) { try { rel = await client.call('bridge', 'get_relationship_between_accounts', [me, account]); } catch (e) {} }
+  const fresh = () => ({ last: null, done: false, seen: new Set() });
+  pf = { account, blog: fresh(), waves: fresh(), wavesStarted: false };
+  const relP = me && me !== account ? client.call('bridge', 'get_relationship_between_accounts', [me, account]).catch(() => null) : Promise.resolve(null);
+  const { prof, acc } = await fetchProfile(account);
   if (!pf || pf.account !== account) return;
   if (!prof && !acc) { box.textContent = 'Не вдалося завантажити профіль @' + account + '.'; return; }
   const m = (acc && (parseMeta(acc.posting_json_metadata).profile || parseMeta(acc.json_metadata).profile)) || (prof && prof.metadata && prof.metadata.profile) || {};
@@ -650,26 +660,38 @@ async function openProfile(account) {
   box.innerHTML = `<div class="prof"><img class="pimg" alt="" src="https://images.hive.blog/u/${esc(account)}/avatar/large"><div><b class="pname"></b><div class="sm prep"></div></div></div>
     <div class="sm pabout" style="white-space:pre-wrap"></div><div class="sm ploc"></div><div class="sm"><a class="psite" target="_blank" rel="noopener noreferrer"></a></div>
     <div class="kpi" style="margin-top:10px"><div><b>${num(st.followers)}</b>підписників</div><div><b>${num(st.following)}</b>підписок</div><div><b>${num(prof && prof.post_count != null ? prof.post_count : acc && acc.post_count)}</b>дописів</div></div>
-    <div style="display:flex;gap:8px;margin:12px 0"><button class="p" id="pblog" style="flex:1">Переглянути блог</button><button class="p" id="pfol" hidden style="flex:1"></button></div>
-    <div class="sm" id="perr"></div><div class="sh">Хвилі</div><div id="pfeed"></div><button class="bk" id="pmore" style="width:100%"></button>`;
+    <button class="p" id="pfol" hidden style="width:100%;margin-top:12px"></button><div class="sm" id="perr"></div>
+    <div id="ptabs"><button data-t="blog" class="on">Блог</button><button data-t="waves">Хвилі</button></div>
+    <div id="pblogwrap"><div id="pblogfeed"></div><button class="bk" id="pblogmore" style="width:100%"></button></div>
+    <div id="pwavewrap" hidden><div id="pwavefeed"></div><button class="bk" id="pwavemore" style="width:100%"></button></div>`;
   const img = box.querySelector('.pimg'); img.onerror = () => { img.onerror = null; img.src = `https://images.hive.blog/u/${account}/avatar/small`; };
   box.querySelector('.pname').textContent = (m.name ? m.name + ' ' : '') + '@' + account;
   box.querySelector('.prep').textContent = rep != null ? 'Репутація ' + rep.toFixed(1) : '';
   box.querySelector('.pabout').textContent = m.about || '';
   box.querySelector('.ploc').textContent = m.location ? '📍 ' + m.location : '';
   const a = box.querySelector('.psite'); if (site) { a.href = site; a.textContent = site.replace(/^https?:\/\//, '').replace(/\/$/, ''); } else a.parentElement.hidden = true;
-  $('#pblog').onclick = () => {
-    viewAcct = account; document.querySelectorAll('.sheet.open').forEach(x => x.classList.remove('open'));
-    sect = 'posts'; renderTabs(); setMode('ablog');
-  };
+
+  box.querySelectorAll('#ptabs button').forEach(b => b.onclick = () => {
+    const t = b.dataset.t;
+    box.querySelectorAll('#ptabs button').forEach(x => x.className = x === b ? 'on' : '');
+    $('#pblogwrap').hidden = t !== 'blog'; $('#pwavewrap').hidden = t !== 'waves';
+    if (t === 'waves' && !pf.wavesStarted) { pf.wavesStarted = true; loadProfileWaves(); }
+  });
+  box.querySelector('#pblogmore').onclick = loadProfileBlog; box.querySelector('#pwavemore').onclick = loadProfileWaves;
+  if (pio) pio.disconnect();
+  pio = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) (en.target.id === 'pblogmore' ? loadProfileBlog : loadProfileWaves)(); }), { root: panel, rootMargin: '300px' });
+  pio.observe(box.querySelector('#pblogmore')); pio.observe(box.querySelector('#pwavemore'));
+  loadProfileBlog();
+
   const fol = box.querySelector('#pfol');
   if (me && me !== account) {
-    let on = rel ? !!rel.follows : (following ? following.has(account) : false);
+    let on = following ? following.has(account) : false, touched = false;
     const label = () => { fol.textContent = on ? 'Відписатися' : 'Підписатися'; };
     label(); fol.hidden = false;
+    relP.then(rel => { if (rel && !touched && pf && pf.account === account) { on = !!rel.follows; label(); } });
     fol.onclick = async () => {
       if (!key) return needLogin();
-      fol.disabled = true; $('#perr').textContent = '';
+      touched = true; fol.disabled = true; $('#perr').textContent = '';
       try {
         await client.broadcast.json({ id: 'follow', json: JSON.stringify(['follow', { follower: me, following: account, what: on ? [] : ['blog'] }]),
           required_auths: [], required_posting_auths: [me] }, key);
@@ -678,29 +700,44 @@ async function openProfile(account) {
       fol.disabled = false;
     };
   }
-  box.querySelector('#pmore').onclick = loadProfileWaves;
-  loadProfileWaves();
+}
+async function loadProfileBlog() {
+  const s = pf && pf.blog, a = pf && pf.account; if (!s || s.done || s.busy) return;
+  const feed = $('#pblogfeed'), more = $('#pblogmore'); if (!feed || !more) return;
+  s.busy = true; more.textContent = 'Завантаження…';
+  try {
+    const params = { sort: 'blog', account: a, limit: 20 }; if (me) params.observer = me;
+    if (s.last) { params.start_author = s.last.author; params.start_permlink = s.last.permlink; }
+    const page = await acctPage(params);
+    if (!pf || pf.account !== a) return;
+    if (page.length < 19) s.done = true;
+    if (page.length) s.last = page[page.length - 1];
+    page.filter(x => !s.seen.has(keyOf(x))).forEach(x => { s.seen.add(keyOf(x)); feed.append(card(postLike(x), true)); });
+    if (!s.seen.size) feed.textContent = 'Постів поки немає.';
+  } catch (e) { more.textContent = 'Не вдалося завантажити: ' + (e.message || e); s.busy = false; return; }
+  s.busy = false; more.textContent = s.done ? '' : 'Завантажити ще';
 }
 async function loadProfileWaves() {
-  const a = pf && pf.account; if (!a || pf.done || pf.busy) return;
-  const feed = $('#pfeed'), more = $('#pmore'); pf.busy = true; more.textContent = 'Завантаження…';
+  const s = pf && pf.waves, a = pf && pf.account; if (!s || s.done || s.busy) return;
+  const feed = $('#pwavefeed'), more = $('#pwavemore'); if (!feed || !more) return;
+  s.busy = true; more.textContent = 'Завантаження…';
   let found = 0, rounds = 0;
   try {
-    while (!pf.done && found < 10 && rounds < 4) {
+    while (!s.done && found < 10 && rounds < 4) {
       const params = { sort: 'comments', account: a, limit: 20 };
-      if (pf.last) { params.start_author = pf.last.author; params.start_permlink = pf.last.permlink; }
+      if (s.last) { params.start_author = s.last.author; params.start_permlink = s.last.permlink; }
       const page = await acctPage(params); rounds++;
       if (!pf || pf.account !== a) return;
-      if (page.length < 19) pf.done = true;
+      if (page.length < 19) s.done = true;
       if (!page.length) break;
-      pf.last = page[page.length - 1];
-      page.filter(x => x.author === a && STAT_HOSTS.includes(x.parent_author) && !pf.seen.has(keyOf(x)))
-        .forEach(x => { pf.seen.add(keyOf(x)); feed.append(card(x, true)); found++; });
+      s.last = page[page.length - 1];
+      page.filter(x => x.author === a && STAT_HOSTS.includes(x.parent_author) && !s.seen.has(keyOf(x)))
+        .forEach(x => { s.seen.add(keyOf(x)); feed.append(card(x, true)); found++; });
     }
-  } catch (e) { more.textContent = 'Не вдалося завантажити: ' + (e.message || e); if (pf) pf.busy = false; return; }
-  pf.busy = false;
-  if (!feed.children.length && pf.done) feed.textContent = 'Хвиль не знайдено серед останніх коментарів.';
-  more.textContent = pf.done ? '' : 'Завантажити ще';
+  } catch (e) { more.textContent = 'Не вдалося завантажити: ' + (e.message || e); s.busy = false; return; }
+  s.busy = false;
+  if (!s.seen.size && s.done) feed.textContent = 'Хвиль не знайдено серед останніх коментарів.';
+  more.textContent = s.done ? '' : 'Завантажити ще';
 }
 const L = { imgs: [], i: 0, s: 1, x: 0, y: 0 };
 const ptrs = new Map(); let gst = null, lastTap = 0, tapTimer = null;
