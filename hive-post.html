@@ -138,13 +138,18 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network'], { timeout: 10000 });
+const ALT = ['https://api.deathwing.me', 'https://api.openhive.network'].map(u => new dhive.Client([u], { timeout: 10000 }));
+async function rpc(api, method, params) {
+  try { return await client.call(api, method, params); }
+  catch (e) { let last = e; for (const c of ALT) { try { return await c.call(api, method, params); } catch (e2) { last = e2; } } throw last; }
+}
 const say = (el, m, c) => { if (c === 'err' && m) Diag.log(m); el.textContent = m; el.className = c || ''; };
 const md = t => {
   const d = document.createElement('div');
   d.innerHTML = DOMPurify.sanitize(marked.parse(t, { breaks: true }), { ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'allow', 'frameborder'] });
   richify(d); return d.innerHTML;
 };
-const NATIVE = /^https?:\/\/(images\.hive\.blog|images\.ecency\.com|img\.ecency\.com|files\.peakd\.com|cdn\.steemitimages\.com|steemitimages\.com|ipfs\.3speak\.tv|media\.3speak\.tv)\//i;
+const HOSTED = /^https:\/\/(images\.hive\.blog|images\.ecency\.com|img\.ecency\.com)\//i;
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function b58(bytes) {
   let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b);
@@ -166,9 +171,11 @@ function richify(root) {
     let src = im.getAttribute('src') || ''; if (!src) return;
     if (src.startsWith('//')) src = 'https:' + src;
     if (src.startsWith('ipfs://')) src = 'https://ipfs.io/ipfs/' + src.slice(7);
-    if (NATIVE.test(src)) src = src.replace(/^http:/i, 'https:');
-    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = src.replace(/^http:/i, 'https:'); }
-    else im.src = src;
+    const lg = src.match(/^https?:\/\/images\.hive\.blog\/\d+x\d+\/(https?:\/\/.+)$/i);
+    if (lg) src = lg[1];
+    if (/^https?:\/\//i.test(src)) src = src.replace(/^http:/i, 'https:');
+    if (/^https?:\/\//i.test(src) && !HOSTED.test(src)) im.dataset.o = src;
+    im.src = src;
     im.referrerPolicy = 'no-referrer';
     im.loading = 'lazy'; im.removeAttribute('width'); im.removeAttribute('height');
   });
@@ -274,8 +281,8 @@ $('#toggle').onclick = () => {
 async function fillCommunities(q) {
   const sel = $('#comm'); let list = [];
   try {
-    if (q) list = ((await client.call('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
-    else { const a = who().author; list = ((await client.call('bridge', 'list_subscriptions', { account: a })) || []).map(c => [c[0], c[1]]); }
+    if (q) list = ((await rpc('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
+    else { const a = who().author; list = ((await rpc('bridge', 'list_subscriptions', { account: a }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: a }))) || []).map(c => [c[0], c[1]]); }
   } catch (e) { return say($('#status'), 'Спільноти: ' + e.message, 'err'); }
   sel.innerHTML = ''; sel.append(new Option('Без спільноти', ''));
   list.forEach(([n, t]) => sel.append(new Option(`${t} (${n})`, n)));
@@ -364,7 +371,7 @@ function node(map, k, depth, root) {
 async function openPost(author, permlink) {
   const st = $('#cstatus'); say(st, 'Завантаження…'); $('#thread').innerHTML = ''; $('#editbtn').hidden = true; curPost = null;
   try {
-    const map = await client.call('bridge', 'get_discussion', { author, permlink });
+    const map = await rpc('bridge', 'get_discussion', { author, permlink });
     const k = author + '/' + permlink; if (!map || !map[k]) throw new Error('пост не знайдено');
     const n = Object.keys(map).length - 1; $('#thread').append(node(map, k, 0)); say(st, `Коментарів: ${n}`);
     curPost = { author, permlink }; $('#editbtn').hidden = author !== $('#user').value.trim().replace(/^@/, '').toLowerCase();
@@ -373,7 +380,7 @@ async function openPost(author, permlink) {
 $('#reload').onclick = async () => {
   try {
     const { author } = who(); say($('#cstatus'), 'Завантаження…');
-    const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 15 });
+    const r = await rpc('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 15 });
     $('#mine').innerHTML = ''; (r || []).forEach(p => $('#mine').append(new Option(`${p.title || p.permlink} (${p.children})`, p.author + '/' + p.permlink)));
     say($('#cstatus'), r && r.length ? '' : 'Постів немає.');
     if (r && r.length) { const [a, pl] = $('#mine').value.split('/'); openPost(a, pl); }
@@ -392,9 +399,9 @@ async function loadNotes() {
   const st = $('#nstatus');
   try {
     const { author } = who(); say(st, 'Завантаження…');
-    notes = (await client.call('bridge', 'account_notifications', { account: author, limit: 50 })) || [];
+    notes = (await rpc('bridge', 'account_notifications', { account: author, limit: 50 })) || [];
     let un = '';
-    try { const u = await client.call('bridge', 'unread_notifications', { account: author }); if (u && u.unread) un = `Нових: ${u.unread}. `; } catch (e) {}
+    try { const u = await rpc('bridge', 'unread_notifications', { account: author }); if (u && u.unread) un = `Нових: ${u.unread}. `; } catch (e) {}
     renderNotes(); say(st, notes.length ? un : 'Сповіщень немає.');
   } catch (e) { say(st, e.message, 'err'); }
 }
@@ -427,7 +434,7 @@ async function loadStats() {
   try {
     const { author } = who(); say(st, 'Завантаження…'); out.innerHTML = '';
     loadRewards(author).catch(() => {});
-    const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 30 });
+    const r = await rpc('bridge', 'get_account_posts', { sort: 'posts', account: author, limit: 30 });
     const posts = (r || []).filter(p => p.author === author).map(p => {
       const tg = p.json_metadata && p.json_metadata.tags;
       return { title: p.title || p.permlink, votes: (p.stats && p.stats.total_votes) ?? (p.active_votes || []).length, com: p.children || 0,
@@ -676,7 +683,7 @@ function setEditUI(on) {
 $('#editbtn').onclick = async () => {
   if (!curPost) return;
   try {
-    const p = await client.call('bridge', 'get_post', { author: curPost.author, permlink: curPost.permlink });
+    const p = await rpc('bridge', 'get_post', { author: curPost.author, permlink: curPost.permlink });
     if (!p) throw new Error('пост не знайдено');
     const jm = typeof p.json_metadata === 'string' ? JSON.parse(p.json_metadata || '{}') : (p.json_metadata || {});
     const parent = p.category || (jm.tags && jm.tags[0]) || 'hive';

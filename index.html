@@ -197,7 +197,7 @@ const md = t => {
   d.innerHTML = DOMPurify.sanitize(marked.parse(t, { breaks: true }), { ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'allow', 'frameborder'] });
   richify(d); return d.innerHTML;
 };
-const NATIVE = /^https?:\/\/(images\.hive\.blog|images\.ecency\.com|img\.ecency\.com|files\.peakd\.com|cdn\.steemitimages\.com|steemitimages\.com|ipfs\.3speak\.tv|media\.3speak\.tv)\//i;
+const HOSTED = /^https:\/\/(images\.hive\.blog|images\.ecency\.com|img\.ecency\.com)\//i;
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function b58(bytes) {
   let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b);
@@ -219,9 +219,11 @@ function richify(root) {
     let src = im.getAttribute('src') || ''; if (!src) return;
     if (src.startsWith('//')) src = 'https:' + src;
     if (src.startsWith('ipfs://')) src = 'https://ipfs.io/ipfs/' + src.slice(7);
-    if (NATIVE.test(src)) src = src.replace(/^http:/i, 'https:');
-    if (/^https?:\/\//i.test(src) && !NATIVE.test(src)) { im.dataset.o = src; im.src = src.replace(/^http:/i, 'https:'); }
-    else im.src = src;
+    const lg = src.match(/^https?:\/\/images\.hive\.blog\/\d+x\d+\/(https?:\/\/.+)$/i);
+    if (lg) src = lg[1];
+    if (/^https?:\/\//i.test(src)) src = src.replace(/^http:/i, 'https:');
+    if (/^https?:\/\//i.test(src) && !HOSTED.test(src)) im.dataset.o = src;
+    im.src = src;
     im.referrerPolicy = 'no-referrer';
     im.loading = 'lazy'; im.removeAttribute('width'); im.removeAttribute('height');
   });
@@ -322,7 +324,7 @@ async function toggleThread(p, slot) {
   if (slot.dataset.open) { slot.innerHTML = ''; delete slot.dataset.open; return; }
   slot.dataset.open = 1; slot.className = 'slot thread'; slot.textContent = 'Завантаження…';
   try {
-    const r = await client.call('condenser_api', 'get_content_replies', [p.author, p.permlink]);
+    const r = await rpc('condenser_api', 'get_content_replies', [p.author, p.permlink]);
     slot.innerHTML = '';
     r.sort((a, b) => a.created.localeCompare(b.created)).forEach(x => slot.append(card(x, false)));
     const box = document.createElement('div'); box.className = 'rbox';
@@ -354,8 +356,8 @@ async function publish(text, pa, pp, prefix, opt = {}) {
 async function fillCommunities(q) {
   const sel = $('#comm'); let list = [];
   try {
-    if (q) list = ((await client.call('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
-    else { if (!me) return needLogin(); list = ((await client.call('bridge', 'list_subscriptions', { account: me })) || []).map(c => [c[0], c[1]]); }
+    if (q) list = ((await rpc('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
+    else { if (!me) return needLogin(); list = ((await rpc('bridge', 'list_subscriptions', { account: me })) || []).map(c => [c[0], c[1]]); }
   } catch (e) { return msg('Спільноти: ' + (e.message || e), true); }
   sel.innerHTML = ''; sel.append(new Option('Без спільноти', ''));
   list.forEach(([n, t]) => sel.append(new Option(`${t} (${n})`, n)));
@@ -410,7 +412,7 @@ async function loadConts() {
   const all = [];
   for (const h of HOSTS) {
     try {
-      const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: h, limit: 20 });
+      const r = await rpc('bridge', 'get_account_posts', { sort: 'posts', account: h, limit: 20 });
       (r || []).forEach(p => all.push({ author: h, permlink: p.permlink, created: p.created }));
     } catch (e) {}
   }
@@ -420,7 +422,7 @@ async function loadConts() {
 }
 async function loadCont() {
   const c = conts[ci++];
-  const r = await client.call('condenser_api', 'get_content_replies', [c.author, c.permlink]);
+  const r = await rpc('condenser_api', 'get_content_replies', [c.author, c.permlink]);
   (r || []).forEach(x => { const k = keyOf(x); if (!seen.has(k)) { seen.add(k); items.push(x); } });
 }
 function viewList() {
@@ -463,7 +465,7 @@ async function loadFollowing() {
   if (following || !me) return;
   const set = new Set(); let start = '';
   for (let i = 0; i < 3; i++) {
-    const r = (await client.call('condenser_api', 'get_following', [me, start, 'blog', 1000])) || [];
+    const r = (await rpc('condenser_api', 'get_following', [me, start, 'blog', 1000])) || [];
     r.forEach(x => set.add(x.following));
     if (r.length < 1000) break; start = r[r.length - 1].following;
   }
@@ -480,7 +482,7 @@ async function loadSubs() {
   if (!subsLoaded) {
     if (me) {
       try {
-        const r = (await client.call('bridge', 'list_subscriptions', { account: me })) || [];
+        const r = (await rpc('bridge', 'list_subscriptions', { account: me }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: me }))) || [];
         setCommOptions(r.map(c => [c[0], c[1]])); subsLoaded = true; subsErr = '';
       } catch (e) { subsErr = e.message || String(e); setCommOptions([]); }
     } else setCommOptions([]);
@@ -490,7 +492,7 @@ async function loadSubs() {
 async function communitySearch(q) {
   if (q.length < 2) return;
   try {
-    const r = (await client.call('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || [];
+    const r = (await rpc('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || [];
     setCommOptions(r.map(c => [c.name, c.title])); $('#csel').value = commSel;
     msg(r.length ? 'Оберіть спільноту зі списку.' : 'Спільнот не знайдено.');
   } catch (e) { msg('Пошук спільнот: ' + (e.message || e), true); }
@@ -531,7 +533,7 @@ async function fillCommunity() {
   try {
     const [method, params] = postReq(); if (me) params.observer = me;
     if (cp.last) { params.start_author = cp.last.author; params.start_permlink = cp.last.permlink; }
-    const page = (await client.call('bridge', method, params)) || [];
+    const page = (await rpc('bridge', method, params)) || [];
     if (page.length < 19) cp.done = true;
     if (page.length) cp.last = page[page.length - 1];
     page.filter(x => !cp.seen.has(keyOf(x))).forEach(x => { cp.seen.add(keyOf(x)); $('#feed').append(card(postLike(x), true)); });
@@ -638,7 +640,7 @@ const profCache = new Map(); let pio = null;
 async function fetchProfile(account) {
   const c = profCache.get(account); if (c && Date.now() - c.t < 300000) return c.v;
   const [prof, acc] = await Promise.all([
-    client.call('bridge', 'get_profile', { account }).catch(() => null),
+    rpc('bridge', 'get_profile', { account }).catch(() => null),
     client.database.getAccounts([account]).then(r => r[0]).catch(() => null)
   ]);
   const v = { prof, acc }; if (prof || acc) profCache.set(account, { t: Date.now(), v }); return v;
@@ -650,7 +652,7 @@ async function openProfile(account) {
   const box = $('#pbox'); box.textContent = 'Завантаження…';
   const fresh = () => ({ last: null, done: false, seen: new Set() });
   pf = { account, blog: fresh(), waves: fresh(), wavesStarted: false };
-  const relP = me && me !== account ? client.call('bridge', 'get_relationship_between_accounts', [me, account]).catch(() => null) : Promise.resolve(null);
+  const relP = me && me !== account ? rpc('bridge', 'get_relationship_between_accounts', [me, account]).catch(() => null) : Promise.resolve(null);
   const { prof, acc } = await fetchProfile(account);
   if (!pf || pf.account !== account) return;
   if (!prof && !acc) { box.textContent = 'Не вдалося завантажити профіль @' + account + '.'; return; }
@@ -797,7 +799,7 @@ function lbUp(e) {
 lb.onpointerup = lbUp; lb.onpointercancel = lbUp;
 async function openWave(p) {
   if (p._body) p = Object.assign({}, p, { body: p._body });
-  if (mode === 'bm') { try { p = (await client.call('bridge', 'get_post', { author: p.author, permlink: p.permlink })) || p; } catch (e) {} }
+  if (mode === 'bm') { try { p = (await rpc('bridge', 'get_post', { author: p.author, permlink: p.permlink })) || p; } catch (e) {} }
   if (p.title && !/^## /.test(p.body || '')) p = Object.assign({}, p, { body: '## ' + p.title + '\n\n' + (p.body || '') });
   const box = $('#wv'); box.innerHTML = '';
   const c = card(p, false); box.append(c);
@@ -890,14 +892,14 @@ let notes = [];
 async function unread() {
   if (!me) return;
   try {
-    const u = await client.call('bridge', 'unread_notifications', { account: me }), n = (u && u.unread) || 0;
+    const u = await rpc('bridge', 'unread_notifications', { account: me }), n = (u && u.unread) || 0;
     $('#badge').hidden = !n; $('#badge').textContent = n > 99 ? '99+' : n;
   } catch (e) {}
 }
 async function openNotes() {
   if (!me) return needLogin();
   $('#notes').classList.add('open'); $('#nl').textContent = 'Завантаження…';
-  try { notes = (await client.call('bridge', 'account_notifications', { account: me, limit: 50 })) || []; renderNotes(); }
+  try { notes = (await rpc('bridge', 'account_notifications', { account: me, limit: 50 })) || []; renderNotes(); }
   catch (e) { $('#nl').textContent = 'Не вдалося завантажити: ' + (e.message || e); }
 }
 function renderNotes() {
@@ -917,7 +919,7 @@ function renderNotes() {
 async function viewComment(a, pl) {
   const box = $('#nl'); box.textContent = 'Завантаження…';
   try {
-    const post = await client.call('bridge', 'get_post', { author: a, permlink: pl });
+    const post = await rpc('bridge', 'get_post', { author: a, permlink: pl });
     const back = document.createElement('button'); back.className = 'bk'; back.textContent = '← До сповіщень'; back.onclick = renderNotes;
     box.innerHTML = ''; box.append(back, card(post, false));
   } catch (e) { box.textContent = 'Не вдалося відкрити: ' + (e.message || e); }
@@ -935,6 +937,10 @@ unread(); setInterval(unread, 90000);
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const STAT_HOSTS = [...HOSTS, 'peak.snaps', 'leothreads', 'liketu.moments'];
 const ALT = ['https://api.deathwing.me', 'https://api.openhive.network'].map(u => new dhive.Client([u], { timeout: 10000 }));
+async function rpc(api, method, params) {
+  try { return await client.call(api, method, params); }
+  catch (e) { let last = e; for (const c of ALT) { try { return await c.call(api, method, params); } catch (e2) { last = e2; } } throw last; }
+}
 async function acctPage(params) {
   let err;
   for (const c of [client, ...ALT]) {

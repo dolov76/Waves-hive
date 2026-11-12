@@ -1,5 +1,5 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
-const APP_VERSION = '2026.11.11-2';
+const APP_VERSION = '2026.11.12-1';
 const Diag = (() => {
   const now = () => performance.now();
   const KEY = 'hive_errlog';
@@ -85,6 +85,7 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
         try { s += ', RC ' + ((await client.rc.getRCMana(me)).percentage / 100).toFixed(1) + '%'; } catch (e) {}
         return s;
       });
+      await S('Ваші спільноти (bridge)', async () => { const r = await client.call('bridge', 'list_subscriptions', { account: me }); return 'підписок: ' + (r ? r.length : 0); });
       await S('Сповіщення', async () => { const u = await client.call('bridge', 'unread_notifications', { account: me }); return 'нових ' + ((u && u.unread) || 0); });
     } else log('– Акаунт: нік не вказано, кроки акаунта пропущено');
 
@@ -99,8 +100,13 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
 
     await S('Фото images.hive.blog', () => imgOk('https://images.hive.blog/u/hiveio/avatar/small'));
     await S('Фото images.ecency.com', () => imgOk('https://images.ecency.com/u/ecency/avatar/small'));
-    await S('Фото стороннього сайту (напряму)', () => imgOk('https://www.google.com/favicon.ico'));
-    await S('Фото стороннього сайту (через проксі Hive)', () => imgOk(proxyUrl('https://www.google.com/favicon.ico')));
+    const G = 'https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png';
+    const PK = 'https://files.peakd.com/file/peakd-hive/jacuzzi/243qAUVxKauMWLLLLpomMUsNvoRQ2L4m3HeKeNxsLr1Vpb6NqXuatWgHMdeVYds227T2v.png';
+    await S('Фото стороннього сайту (напряму)', () => imgOk(G));
+    await S('Фото стороннього сайту (через проксі Hive /p/)', () => imgOk(proxyUrl(G)));
+    await S('Фото PeakD (напряму)', () => imgOk(PK));
+    await S('Фото PeakD (через проксі Hive /p/)', () => imgOk(proxyUrl(PK)));
+    await S('Фото PeakD (старий формат images.hive.blog/256x0/)', () => imgOk('https://images.hive.blog/256x0/' + PK));
     await S('Сервіс фото images.hive.blog (завантаження)', () => reach('https://images.hive.blog/'));
     await S('3Speak embed (завантаження відео)', () => reach('https://embed.3speak.tv/video/diag'));
 
