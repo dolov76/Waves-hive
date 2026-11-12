@@ -254,7 +254,7 @@ document.addEventListener('error', e => {
   const step = +(im.dataset.t || 0);
   if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = proxyUrl(im.dataset.o); return; }
   if (step <= 1 && /\/\/images\.ecency\.com\//i.test(im.src)) { im.dataset.t = 2; im.src = im.src.replace('//images.ecency.com/', '//img.ecency.com/'); return; }
-  im.alt = 'Фото недоступне'; im.classList.add('imgfail');
+  im.alt = 'Фото недоступне'; im.classList.add('imgfail'); Diag.log('Фото не завантажилось: ' + (im.dataset.o || im.src).slice(0, 160));
 }, true);
 const ICON_H = '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
 const ICON_B = '<svg viewBox="0 0 24 24"><path d="M6 4h12v16l-6-4-6 4z"/></svg>';
@@ -482,7 +482,7 @@ async function loadSubs() {
   if (!subsLoaded) {
     if (me) {
       try {
-        const r = (await rpc('bridge', 'list_subscriptions', { account: me }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: me }))) || [];
+        const r = (await rpc('bridge', 'list_subscriptions', { account: me }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: me })).catch(() => rpc('bridge', 'list_subscriptions', { account: me, observer: me }))) || [];
         setCommOptions(r.map(c => [c[0], c[1]])); subsLoaded = true; subsErr = '';
       } catch (e) { subsErr = e.message || String(e); setCommOptions([]); }
     } else setCommOptions([]);
@@ -804,6 +804,12 @@ async function openWave(p) {
   const box = $('#wv'); box.innerHTML = '';
   const c = card(p, false); box.append(c);
   $('#wview').classList.add('open'); bump($('#wview'));
+  box.querySelectorAll('.body img').forEach(im => {
+    if (im.closest('.vp')) return;
+    im.loading = 'eager';
+    const u = im.getAttribute('src');
+    if (u && !(im.complete && im.naturalWidth)) { im.removeAttribute('src'); im.setAttribute('src', u); }
+  });
   toggleThread(p, c.querySelector('.slot'));
 }
 
@@ -939,7 +945,7 @@ const STAT_HOSTS = [...HOSTS, 'peak.snaps', 'leothreads', 'liketu.moments'];
 const ALT = ['https://api.deathwing.me', 'https://api.openhive.network'].map(u => new dhive.Client([u], { timeout: 10000 }));
 async function rpc(api, method, params) {
   try { return await client.call(api, method, params); }
-  catch (e) { let last = e; for (const c of ALT) { try { return await c.call(api, method, params); } catch (e2) { last = e2; } } throw last; }
+  catch (e) { let last = e; for (const c of ALT) { try { return await c.call(api, method, params); } catch (e2) { last = e2; } } Diag.log(method + ': ' + (last.message || last)); throw last; }
 }
 async function acctPage(params) {
   let err;
@@ -1124,6 +1130,22 @@ $('#logout').onclick = () => { if (confirm('Видалити ключ з цьо�
 Sec.autolock(() => { if (key && Sec.has()) key = null; });
 if (Sec.has()) Sec.autoUnlock().then(r => { if (r) { me = r.user; key = dhive.PrivateKey.fromString(r.wif); refreshAcc(); unread(); } });
 else if (legacyKey) { $('#u').value = me; $('#k').value = legacyKey; $('#lerr').textContent = 'Ваш ключ зберігався без захисту. Натисніть «Зберегти», щоб зашифрувати його паролем.'; $('#login').classList.add('open'); }
+
+/* ---- тест рендеру зображень для діагностики ---- */
+Diag.extras.push(['Рендер постів (PeakD/Ecency)', () => new Promise((res, rej) => {
+  const PK = 'https://files.peakd.com/file/peakd-hive/jacuzzi/243qAUVxKauMWLLLLpomMUsNvoRQ2L4m3HeKeNxsLr1Vpb6NqXuatWgHMdeVYds227T2v.png';
+  const sample = ['![](' + PK + ')', '![](https://images.hive.blog/256x0/' + PK + ')', '<img src="' + PK + '">', '![](https://images.ecency.com/u/ecency/avatar/small)'].join('\n\n');
+  const box = document.createElement('div'); box.className = 'body';
+  box.style.cssText = 'position:fixed;left:0;top:0;width:160px;opacity:.02;pointer-events:none;z-index:1';
+  box.innerHTML = md(sample); document.body.append(box);
+  const imgs = [...box.querySelectorAll('img')];
+  setTimeout(() => {
+    const good = i => i.complete && i.naturalWidth > 0, ok = imgs.filter(good).length, bad = imgs.filter(i => !good(i)).map(i => (i.dataset.o || i.src).slice(-36));
+    box.remove();
+    if (ok === imgs.length) res('усі ' + ok + ' зображень завантажились через рендер застосунку');
+    else rej(new Error('завантажилось ' + ok + ' з ' + imgs.length + '; не відкрились: ' + bad.join(', ')));
+  }, 7000);
+})]);
 
 $('#ver').textContent = 'Версія ' + APP_VERSION;
 $('#lockmin').value = String(Sec.lockMin()); $('#lockmin').onchange = () => Sec.setLockMin($('#lockmin').value);

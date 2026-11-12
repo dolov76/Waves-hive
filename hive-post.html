@@ -141,7 +141,7 @@ const client = new dhive.Client(['https://api.hive.blog', 'https://api.deathwing
 const ALT = ['https://api.deathwing.me', 'https://api.openhive.network'].map(u => new dhive.Client([u], { timeout: 10000 }));
 async function rpc(api, method, params) {
   try { return await client.call(api, method, params); }
-  catch (e) { let last = e; for (const c of ALT) { try { return await c.call(api, method, params); } catch (e2) { last = e2; } } throw last; }
+  catch (e) { let last = e; for (const c of ALT) { try { return await c.call(api, method, params); } catch (e2) { last = e2; } } Diag.log(method + ': ' + (last.message || last)); throw last; }
 }
 const say = (el, m, c) => { if (c === 'err' && m) Diag.log(m); el.textContent = m; el.className = c || ''; };
 const md = t => {
@@ -206,7 +206,7 @@ document.addEventListener('error', e => {
   const step = +(im.dataset.t || 0);
   if (step === 0 && im.dataset.o) { im.dataset.t = 1; im.src = proxyUrl(im.dataset.o); return; }
   if (step <= 1 && /\/\/images\.ecency\.com\//i.test(im.src)) { im.dataset.t = 2; im.src = im.src.replace('//images.ecency.com/', '//img.ecency.com/'); return; }
-  im.alt = 'Фото недоступне'; im.classList.add('imgfail');
+  im.alt = 'Фото недоступне'; im.classList.add('imgfail'); Diag.log('Фото не завантажилось: ' + (im.dataset.o || im.src).slice(0, 160));
 }, true);
 const ago = s => { const d = (Date.now() - new Date(s + 'Z')) / 1000; return d < 3600 ? Math.max(1, Math.floor(d/60)) + ' хв' : d < 86400 ? Math.floor(d/3600) + ' год' : Math.floor(d/86400) + ' д'; };
 const who = () => {
@@ -282,7 +282,7 @@ async function fillCommunities(q) {
   const sel = $('#comm'); let list = [];
   try {
     if (q) list = ((await rpc('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
-    else { const a = who().author; list = ((await rpc('bridge', 'list_subscriptions', { account: a }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: a }))) || []).map(c => [c[0], c[1]]); }
+    else { const a = who().author; list = ((await rpc('bridge', 'list_subscriptions', { account: a }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: a })).catch(() => rpc('bridge', 'list_subscriptions', { account: a, observer: a }))) || []).map(c => [c[0], c[1]]); }
   } catch (e) { return say($('#status'), 'Спільноти: ' + e.message, 'err'); }
   sel.innerHTML = ''; sel.append(new Option('Без спільноти', ''));
   list.forEach(([n, t]) => sel.append(new Option(`${t} (${n})`, n)));

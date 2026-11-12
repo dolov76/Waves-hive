@@ -1,8 +1,8 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
-const APP_VERSION = '2026.11.12-1';
+const APP_VERSION = '2026.11.12-3';
 const Diag = (() => {
   const now = () => performance.now();
-  const KEY = 'hive_errlog';
+  const KEY = 'hive_errlog', extras = [];
   const scrub = x => String(x).replace(/5[HJK][1-9A-HJ-NP-Za-km-z]{49}/g, '[ключ приховано]').slice(0, 300);
   const errors = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } };
   const log = m => {
@@ -59,7 +59,8 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
       if (miss.length) throw new Error('не завантажено: ' + miss.join(', ')); return 'усі завантажені';
     });
 
-    for (const u of ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network']) {
+    const NODES = ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network'];
+    for (const u of NODES) {
       await S('Вузол ' + u.replace('https://', ''), async () => {
         const g = await new dhive.Client([u], { timeout: 8000 }).database.getDynamicGlobalProperties();
         return `блок ${g.head_block_number}, відставання ${Math.max(0, Math.round((Date.now() - new Date(g.time + 'Z')) / 1000))} с`;
@@ -85,7 +86,15 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
         try { s += ', RC ' + ((await client.rc.getRCMana(me)).percentage / 100).toFixed(1) + '%'; } catch (e) {}
         return s;
       });
-      await S('Ваші спільноти (bridge)', async () => { const r = await client.call('bridge', 'list_subscriptions', { account: me }); return 'підписок: ' + (r ? r.length : 0); });
+      await S('Ваші спільноти (bridge, по вузлах)', async () => {
+        const one = async u => {
+          const c = new dhive.Client([u], { timeout: 8000 });
+          const t = async (m, p) => { try { const r = await c.call('bridge', m, p); return '✓' + (r ? r.length : 0); } catch (e) { return '✗'; } };
+          const [a, b, x] = await Promise.all([t('list_subscriptions', { account: me }), t('list_all_subscriptions', { account: me }), t('list_subscriptions', { account: me, observer: me })]);
+          return u.replace('https://', '') + ' [підписки ' + a + ', усі підписки ' + b + ', з observer ' + x + ']';
+        };
+        return (await Promise.all(NODES.map(one))).join('; ');
+      });
       await S('Сповіщення', async () => { const u = await client.call('bridge', 'unread_notifications', { account: me }); return 'нових ' + ((u && u.unread) || 0); });
     } else log('– Акаунт: нік не вказано, кроки акаунта пропущено');
 
@@ -110,11 +119,12 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
     await S('Сервіс фото images.hive.blog (завантаження)', () => reach('https://images.hive.blog/'));
     await S('3Speak embed (завантаження відео)', () => reach('https://embed.3speak.tv/video/diag'));
 
+    for (const [n, f] of extras) await S(n, f);
     const errs = errors();
     log(errs.length ? '— Останні помилки застосунку (' + errs.length + ') —' : '— Журнал помилок порожній —');
     errs.slice(-10).forEach(x => log('! ' + x.t.slice(5, 16).replace('T', ' ') + ' ' + x.m));
     log('— кінець —');
     return lines.join('\n');
   }
-  return { run, log, errors, clear };
+  return { run, log, errors, clear, extras };
 })();
