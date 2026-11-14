@@ -125,6 +125,26 @@ const Sec = (() => {
           return true;
         } });
     },
+    changePasswordUI() {
+      return ask({ title: 'Змінити пароль', text: 'Введіть поточний пароль і новий. Збережений ключ буде перешифровано.',
+        fields: [{ id: 'o', ph: 'Поточний пароль' }, { id: 'p1', ph: 'Новий пароль (щонайменше 8 символів)' }, { id: 'p2', ph: 'Повторіть новий пароль' }], ok: 'Змінити', cancel: 'Скасувати',
+        onOk: async v => {
+          let r; try { r = await open(v.o); } catch (e) { throw new Error('Поточний пароль невірний.'); }
+          if (v.p1.length < 8) throw new Error('Новий пароль має містити щонайменше 8 символів.');
+          if (v.p1 !== v.p2) throw new Error('Нові паролі не збігаються.');
+          await save(r.user, r.wif, v.p1); return true;
+        } });
+    },
+    rememberUI() {
+      return ask({ title: 'Не питати пароль', text: 'Ключ буде доступний без пароля на цьому пристрої протягом обраного терміну. Це зручно, але менш безпечно, якщо телефоном користується хтось інший.',
+        fields: [{ id: 'pw', ph: 'Пароль' }, { id: 'days', type: 'select', options: DAYS }], ok: 'Увімкнути', cancel: 'Скасувати',
+        onOk: async v => {
+          let r; try { r = await open(v.pw); } catch (e) { throw new Error('Невірний пароль.'); }
+          await rememberSave(r.user, r.wif, +v.days); return true;
+        } });
+    },
+    deviceExp() { try { const v = JSON.parse(localStorage.getItem('hive_dev')); return v && v.exp > Date.now() ? v.exp : 0; } catch (e) { return 0; } },
+    forgetDevice: rememberClear,
     async autoUnlock() {
       try { const s = JSON.parse(sessionStorage.getItem('hive_sess')); if (s && s.user && s.wif) return s; } catch (e) {}
       const r = await rememberOpen(); if (r) cacheSet(r.user, r.wif); return r;

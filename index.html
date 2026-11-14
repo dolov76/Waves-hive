@@ -96,8 +96,8 @@
   .body a { color:#3b82f6; overflow-wrap:anywhere; }
   #ptabs { display:flex; gap:6px; margin:6px 0 4px; } #ptabs button { flex:1; background:none; border:0; border-bottom:2px solid transparent; color:var(--mut); font:inherit; font-weight:600; padding:8px; border-radius:0; } #ptabs button.on { color:var(--fg); border-color:var(--fg); }
   #acc { display:flex; align-items:center; } .accav { width:22px; height:22px; border-radius:50%; margin-right:6px; background:var(--soft); object-fit:cover; }
-  #mlist .mi { display:flex; align-items:center; gap:12px; width:100%; background:none; border:0; border-bottom:1px solid var(--line); color:var(--fg); font:inherit; padding:13px 4px; text-align:left; border-radius:0; }
-  #mlist .mi .bd { margin-left:auto; background:var(--like); color:#fff; border-radius:10px; font-size:11px; padding:1px 8px; } #mlist .mi.danger { color:var(--like); }
+    .mi { display:flex; align-items:center; gap:12px; width:100%; background:none; border:0; border-bottom:1px solid var(--line); color:var(--fg); font:inherit; padding:13px 4px; text-align:left; border-radius:0; }
+  .mi .bd { margin-left:auto; background:var(--like); color:#fff; border-radius:10px; font-size:11px; padding:1px 8px; } .mi.danger { color:var(--like); }
   #msg { padding:10px 16px; color:var(--mut); font-size:13px; } .err { color:var(--like); }
 </style>
 </head>
@@ -167,6 +167,26 @@
   <div class="sm" id="mver" style="margin-top:10px"></div>
 </div></div>
 
+<div class="sheet" id="set"><div>
+  <div class="top"><button data-close>Закрити</button><b>Налаштування</b><span style="width:64px"></span></div>
+  <div class="sh">Голосування</div>
+  <div class="sm">Сила голосу за замовчуванням: <b id="sw">100</b>%</div>
+  <input type="range" id="swr" min="1" max="100" step="1" value="100" style="width:100%;accent-color:var(--like)">
+  <label class="sm" style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="swfix" style="width:auto"> Не змінювати після кожного голосування</label>
+  <div class="sh">Безпека</div>
+  <label class="sm" style="display:block">Автоблокування, коли застосунок у фоні
+    <select id="lockmin2"><option value="10">10 хвилин</option><option value="30">30 хвилин</option><option value="120">2 години</option><option value="480">8 годин</option><option value="0">До закриття застосунку</option></select>
+  </label>
+  <div id="secbox">
+    <div class="sm" id="devinfo" style="margin:10px 0 4px"></div>
+    <button class="mi" id="sdev" type="button"></button>
+    <button class="mi" id="spw" type="button"><span>🔑</span><span>Змінити пароль</span></button>
+  </div>
+  <div class="sh">Застосунок</div>
+  <button class="mi" id="sclear" type="button"><span>🧹</span><span>Очистити кеш і оновити</span></button>
+  <div class="sm" id="sver" style="margin-top:8px"></div>
+</div></div>
+
 <div class="sheet" id="diag"><div>
   <div class="top"><button data-close>Закрити</button><b>Діагностика</b><button class="p" id="dgo">Запустити</button></div>
   <pre id="dg" style="white-space:pre-wrap;font-size:12px;margin:10px 0">Натисніть «Запустити». Звіт не містить ключів.</pre>
@@ -183,10 +203,7 @@
   <button id="logout" type="button" class="bk">Вийти й видалити ключ</button>
   <button id="dgopen" type="button" class="bk">Діагностика</button>
   <div class="sm" id="ver" style="margin-top:6px"></div>
-  <label class="sm" style="display:block;margin-top:10px">Автоблокування, коли застосунок у фоні
-    <select id="lockmin"><option value="10">10 хвилин</option><option value="30">30 хвилин</option><option value="120">2 години</option><option value="480">8 годин</option><option value="0">До закриття застосунку</option></select>
-  </label>
-</div></div>
+  </div></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -327,7 +344,7 @@ async function castVote(weight) {
     await client.broadcast.vote({ voter: me, author: p.author, permlink: p.permlink, weight: weight * 100 }, key);
     const s = btn.querySelector('span');
     if (weight === 0) { btn.classList.remove('on'); if (had) s.textContent = Math.max(0, +s.textContent - 1); }
-    else { if (!had) s.textContent = +s.textContent + 1; btn.classList.add('on'); try { localStorage.setItem('ht_w', String(weight)); } catch (e) {} }
+    else { if (!had) s.textContent = +s.textContent + 1; btn.classList.add('on'); try { if (localStorage.getItem('ht_wfix') !== '1') localStorage.setItem('ht_w', String(weight)); } catch (e) {} }
     $('#vsheet').classList.remove('open');
   } catch (e) { el.dataset.err = 1; el.className = 'sm err'; el.textContent = 'Голос не прийнято: ' + (e.message || e); }
 }
@@ -1162,6 +1179,34 @@ Diag.extras.push(['Рендер постів (PeakD/Ecency)', () => new Promise(
   }, 7000);
 })]);
 
+/* ---- налаштування ---- */
+function renderSecurity() {
+  const has = Sec.has(), exp = Sec.deviceExp();
+  $('#secbox').hidden = !has;
+  $('#devinfo').textContent = exp ? 'Пароль не запитується до ' + new Date(exp).toLocaleDateString('uk-UA') + '.' : 'Пароль запитується при кожному розблокуванні.';
+  $('#sdev').innerHTML = ''; const a = document.createElement('span'), b = document.createElement('span');
+  a.textContent = exp ? '🧽' : '⏱️'; b.textContent = exp ? 'Забути цей пристрій (знову питати пароль)' : 'Не питати пароль на цьому пристрої…';
+  $('#sdev').append(a, b);
+}
+function openSettings() {
+  const sheet = $('#set'); sheet.classList.add('open'); bump(sheet);
+  let w = 100; try { w = parseInt(localStorage.getItem('ht_w') || '100', 10) || 100; } catch (e) {}
+  $('#swr').value = w; $('#sw').textContent = w;
+  try { $('#swfix').checked = localStorage.getItem('ht_wfix') === '1'; } catch (e) {}
+  $('#lockmin2').value = String(Sec.lockMin());
+  renderSecurity(); $('#sver').textContent = 'Версія ' + APP_VERSION;
+}
+$('#swr').oninput = () => { $('#sw').textContent = $('#swr').value; try { localStorage.setItem('ht_w', $('#swr').value); } catch (e) {} };
+$('#swfix').onchange = () => { try { localStorage.setItem('ht_wfix', $('#swfix').checked ? '1' : '0'); } catch (e) {} };
+$('#lockmin2').onchange = () => Sec.setLockMin($('#lockmin2').value);
+$('#sdev').onclick = async () => { if (Sec.deviceExp()) await Sec.forgetDevice(); else await Sec.rememberUI(); renderSecurity(); };
+$('#spw').onclick = async () => { if (await Sec.changePasswordUI()) $('#devinfo').textContent = 'Пароль змінено.'; };
+$('#sclear').onclick = async () => {
+  if (!confirm('Очистити кеш застосунку й перезавантажити? Ключ, чернетки й закладки збережуться.')) return;
+  try { for (const k of await caches.keys()) await caches.delete(k); for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (e) {}
+  location.reload();
+};
+
 /* ---- меню акаунта ---- */
 const closeMenu = () => $('#menu').classList.remove('open');
 function renderMenuItems(rew) {
@@ -1174,6 +1219,7 @@ function renderMenuItems(rew) {
     ['✍️', 'Новий пост (студія)', () => { location.href = 'hive-post.html'; }],
     ['📊', 'Статистика хвиль', () => openStats()],
     ['💰', 'Статистика постів і винагороди', () => { location.href = 'hive-post.html#stats'; }, rew ? 'є винагорода' : ''],
+    ['⚙️', 'Налаштування', () => openSettings()],
     ['🩺', 'Діагностика', () => $('#diag').classList.add('open')],
     [key ? '🔒' : '🔓', key ? 'Заблокувати зараз' : 'Розблокувати ключ', async () => {
       if (key) { await Sec.lockNow(); key = null; msg('Заблоковано. Наступного разу знадобиться пароль.'); }
@@ -1216,7 +1262,6 @@ async function openMenu() {
 }
 
 $('#ver').textContent = 'Версія ' + APP_VERSION;
-$('#lockmin').value = String(Sec.lockMin()); $('#lockmin').onchange = () => Sec.setLockMin($('#lockmin').value);
 /* ---- діагностика ---- */
 $('#dgopen').onclick = () => { $('#login').classList.remove('open'); $('#diag').classList.add('open'); };
 $('#dgo').onclick = async () => {
