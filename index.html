@@ -19,6 +19,7 @@
 <script src="secure.js"></script>
 <script src="diag.js"></script>
 <script src="editor.js"></script>
+<script src="backup.js"></script>
 <style>
   :root { color-scheme:light; --bg:#fff; --fg:#101010; --mut:#8a8a8e; --line:#dcdcdf; --soft:#f3f3f5; --like:#e0245e; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark; --bg:#101010; --fg:#f3f5f7; --mut:#777; --line:#2e2e30; --soft:#1c1c1e; --like:#ff4d79; } }
@@ -182,6 +183,10 @@
     <button class="mi" id="sdev" type="button"></button>
     <button class="mi" id="spw" type="button"><span>🔑</span><span>Змінити пароль</span></button>
   </div>
+  <div class="sh">Дані</div>
+  <div class="sm" id="bkinfo"></div>
+  <button class="mi" id="bkexp" type="button"><span>⬇️</span><span>Експортувати чернетки, шаблони й закладки</span></button>
+  <button class="mi" id="bkimp" type="button"><span>⬆️</span><span>Імпортувати з файлу…</span></button>
   <div class="sh">Застосунок</div>
   <button class="mi" id="sclear" type="button"><span>🧹</span><span>Очистити кеш і оновити</span></button>
   <div class="sm" id="sver" style="margin-top:8px"></div>
@@ -537,10 +542,10 @@ function postLike(x) {
   const rb = x.reblogged_by && x.reblogged_by[0], body = (rb ? '*↻ репост від @' + rb + '*\n\n' : '') + '**' + (x.title || '').replace(/[*_`]/g, '') + '**\n\n' + plain.slice(0, 280) + (plain.length > 280 ? '…' : '') + (() => { const vm = (x.body || '').match(VIDEO_RE); return vm ? (img ? '\n\n[![](' + img + ')](' + vm[0] + ')' : '\n\n' + vm[0]) : (img ? '\n\n![](' + img + ')' : ''); })();
   return Object.assign({}, x, { body, _body: x.body, net_votes: (x.stats && x.stats.total_votes) ?? (x.active_votes || []).length });
 }
-const POSTM = ['pfeed', 'pnew', 'ptrend', 'phot', 'pmine'];
+const POSTM = ['pfeed', 'pnew', 'ptrend', 'phot', 'pblog', 'pmine'];
 const isPostMode = m => m === 'comm' || POSTM.includes(m);
 const SECT_TABS = {
-  posts: [['pfeed', 'Підписки'], ['pnew', 'Нові'], ['ptrend', 'Тренд'], ['phot', 'Гарячі'], ['comm', 'Спільноти'], ['pmine', 'Мій блог'], ['bm', 'Закладки']],
+  posts: [['pfeed', 'Підписки'], ['pnew', 'Нові'], ['ptrend', 'Тренд'], ['phot', 'Гарячі'], ['comm', 'Спільноти'], ['pblog', 'Мій блог'], ['pmine', 'Мої пости'], ['bm', 'Закладки']],
   waves: [['new', 'Нові'], ['trend', 'Тренд'], ['follow', 'Підписки'], ['mine', 'Мої'], ['search', 'Пошук'], ['bm', 'Закладки']]
 };
 let sect = 'posts';
@@ -550,7 +555,7 @@ function postReq() {
   if (mode === 'pnew') return rk('created', '');
   if (mode === 'ptrend') return rk('trending', '');
   if (mode === 'phot') return rk('hot', '');
-  return ['get_account_posts', { sort: mode === 'pfeed' ? 'feed' : 'blog', account: me, limit: 20 }];
+  return ['get_account_posts', { sort: mode === 'pfeed' ? 'feed' : mode === 'pblog' ? 'blog' : 'posts', account: me, limit: 20 }];
 }
 async function fillCommunity() {
   const more = $('#more');
@@ -559,7 +564,7 @@ async function fillCommunity() {
     msg(subsErr ? 'Не вдалося завантажити ваші спільноти: ' + subsErr + '. Скористайтесь пошуком вище.' : (me ? 'Оберіть спільноту зі списку або знайдіть її пошуком.' : 'Увійдіть або знайдіть спільноту пошуком.'), !!subsErr);
     return;
   }
-  if ((mode === 'pfeed' || mode === 'pmine') && !me) { more.hidden = true; msg('Увійдіть, щоб бачити ' + (mode === 'pfeed' ? 'стрічку підписок.' : 'свої пости.')); return; }
+  if ((mode === 'pfeed' || mode === 'pblog' || mode === 'pmine') && !me) { more.hidden = true; msg('Увійдіть, щоб бачити ' + (mode === 'pfeed' ? 'стрічку підписок.' : 'свої публікації.')); return; }
   if (busy || cp.done) return;
   busy = true; more.hidden = false; more.textContent = 'Завантаження…';
   let ok = false;
@@ -684,7 +689,7 @@ async function openProfile(account) {
   sheet.classList.add('open'); bump(sheet); panel.scrollTop = 0;
   const box = $('#pbox'); box.textContent = 'Завантаження…';
   const fresh = () => ({ last: null, done: false, seen: new Set() });
-  pf = { account, blog: fresh(), waves: fresh(), wavesStarted: false };
+  pf = { account, blog: fresh(), posts: fresh(), waves: fresh(), wavesStarted: false, postsStarted: false };
   const relP = me && me !== account ? rpc('bridge', 'get_relationship_between_accounts', [me, account]).catch(() => null) : Promise.resolve(null);
   const { prof, acc } = await fetchProfile(account);
   if (!pf || pf.account !== account) return;
@@ -700,8 +705,9 @@ async function openProfile(account) {
     <div class="sm pabout" style="white-space:pre-wrap"></div><div class="sm ploc"></div><div class="sm"><a class="psite" target="_blank" rel="noopener noreferrer"></a></div>
     <div class="kpi" style="margin-top:10px"><div><b>${num(st.followers)}</b>підписників</div><div><b>${num(st.following)}</b>підписок</div><div><b>${num(prof && prof.post_count != null ? prof.post_count : acc && acc.post_count)}</b>дописів</div></div>
     <button class="p" id="pfol" hidden style="width:100%;margin-top:12px"></button><div class="sm" id="perr"></div>
-    <div id="ptabs"><button data-t="blog" class="on">Блог</button><button data-t="waves">Хвилі</button></div>
+    <div id="ptabs"><button data-t="blog" class="on">Блог</button><button data-t="posts">Пости</button><button data-t="waves">Хвилі</button></div>
     <div id="pblogwrap"><div id="pblogfeed"></div><button class="bk" id="pblogmore" style="width:100%"></button></div>
+    <div id="ppostswrap" hidden><div id="ppostsfeed"></div><button class="bk" id="ppostsmore" style="width:100%"></button></div>
     <div id="pwavewrap" hidden><div id="pwavefeed"></div><button class="bk" id="pwavemore" style="width:100%"></button></div>`;
   const img = box.querySelector('.pimg'); img.onerror = () => { img.onerror = null; img.src = `https://images.hive.blog/u/${account}/avatar/small`; };
   box.querySelector('.pname').textContent = (m.name ? m.name + ' ' : '') + '@' + account;
@@ -713,14 +719,15 @@ async function openProfile(account) {
   box.querySelectorAll('#ptabs button').forEach(b => b.onclick = () => {
     const t = b.dataset.t;
     box.querySelectorAll('#ptabs button').forEach(x => x.className = x === b ? 'on' : '');
-    $('#pblogwrap').hidden = t !== 'blog'; $('#pwavewrap').hidden = t !== 'waves';
+    $('#pblogwrap').hidden = t !== 'blog'; $('#ppostswrap').hidden = t !== 'posts'; $('#pwavewrap').hidden = t !== 'waves';
+    if (t === 'posts' && !pf.postsStarted) { pf.postsStarted = true; loadProfileBlog('posts'); }
     if (t === 'waves' && !pf.wavesStarted) { pf.wavesStarted = true; loadProfileWaves(); }
   });
-  box.querySelector('#pblogmore').onclick = loadProfileBlog; box.querySelector('#pwavemore').onclick = loadProfileWaves;
+  box.querySelector('#pblogmore').onclick = () => loadProfileBlog('blog'); box.querySelector('#ppostsmore').onclick = () => loadProfileBlog('posts'); box.querySelector('#pwavemore').onclick = loadProfileWaves;
   if (pio) pio.disconnect();
-  pio = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) (en.target.id === 'pblogmore' ? loadProfileBlog : loadProfileWaves)(); }), { root: panel, rootMargin: '300px' });
-  pio.observe(box.querySelector('#pblogmore')); pio.observe(box.querySelector('#pwavemore'));
-  loadProfileBlog();
+  pio = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) ({ pblogmore: () => loadProfileBlog('blog'), ppostsmore: () => loadProfileBlog('posts'), pwavemore: loadProfileWaves })[en.target.id](); }), { root: panel, rootMargin: '300px' });
+  pio.observe(box.querySelector('#pblogmore')); pio.observe(box.querySelector('#ppostsmore')); pio.observe(box.querySelector('#pwavemore'));
+  loadProfileBlog('blog');
 
   const fol = box.querySelector('#pfol');
   if (me && me !== account) {
@@ -740,12 +747,12 @@ async function openProfile(account) {
     };
   }
 }
-async function loadProfileBlog() {
-  const s = pf && pf.blog, a = pf && pf.account; if (!s || s.done || s.busy) return;
-  const feed = $('#pblogfeed'), more = $('#pblogmore'); if (!feed || !more) return;
+async function loadProfileBlog(kind) {
+  const k = kind === 'posts' ? 'posts' : 'blog', s = pf && pf[k], a = pf && pf.account; if (!s || s.done || s.busy) return;
+  const feed = $('#p' + k + 'feed'), more = $('#p' + k + 'more'); if (!feed || !more) return;
   s.busy = true; more.textContent = 'Завантаження…';
   try {
-    const params = { sort: 'blog', account: a, limit: 20 }; if (me) params.observer = me;
+    const params = { sort: k === 'blog' ? 'blog' : 'posts', account: a, limit: 20 }; if (me) params.observer = me;
     if (s.last) { params.start_author = s.last.author; params.start_permlink = s.last.permlink; }
     const page = await acctPage(params);
     if (!pf || pf.account !== a) return;
@@ -879,6 +886,7 @@ async function uploadImage(file) {
 }
 
 async function attach(ta, files, a, b, st) {
+  Editor.reset();
   let pos = a, end = b;
   for (let i = 0; i < files.length; i++) {
     st.textContent = `Завантажую ${i + 1} з ${files.length}…`; st.className = '';
@@ -1179,6 +1187,16 @@ Diag.extras.push(['Рендер постів (PeakD/Ecency)', () => new Promise(
   }, 7000);
 })]);
 
+/* ---- резервні копії ---- */
+async function renderBackup() { $('#bkinfo').textContent = await Backup.info(); }
+$('#bkexp').onclick = () => { Backup.exportFile(); renderBackup(); };
+$('#bkimp').onclick = () => Backup.importUI((err, res) => {
+  if (err) { $('#bkinfo').textContent = 'Не вдалося імпортувати: ' + err.message; return; }
+  if (!res) return;
+  renderBackup().then(() => { $('#bkinfo').textContent = `Додано: чернеток ${res.drafts}, шаблонів ${res.tpls}, закладок ${res.bm}. ` + $('#bkinfo').textContent; });
+});
+Backup.persist();
+
 /* ---- налаштування ---- */
 function renderSecurity() {
   const has = Sec.has(), exp = Sec.deviceExp();
@@ -1194,7 +1212,7 @@ function openSettings() {
   $('#swr').value = w; $('#sw').textContent = w;
   try { $('#swfix').checked = localStorage.getItem('ht_wfix') === '1'; } catch (e) {}
   $('#lockmin2').value = String(Sec.lockMin());
-  renderSecurity(); $('#sver').textContent = 'Версія ' + APP_VERSION;
+  renderSecurity(); renderBackup(); $('#sver').textContent = 'Версія ' + APP_VERSION;
 }
 $('#swr').oninput = () => { $('#sw').textContent = $('#swr').value; try { localStorage.setItem('ht_w', $('#swr').value); } catch (e) {} };
 $('#swfix').onchange = () => { try { localStorage.setItem('ht_wfix', $('#swfix').checked ? '1' : '0'); } catch (e) {} };
@@ -1213,7 +1231,8 @@ function renderMenuItems(rew) {
   const go = fn => () => { closeMenu(); fn(); };
   const items = [
     ['👤', 'Мій профіль', () => openProfile(me)],
-    ['📝', 'Мої пости', () => { sect = 'posts'; renderTabs(); setMode('pmine'); }],
+    ['📖', 'Мій блог (з репостами)', () => { sect = 'posts'; renderTabs(); setMode('pblog'); }],
+    ['📝', 'Мої пости (без репостів)', () => { sect = 'posts'; renderTabs(); setMode('pmine'); }],
     ['🌊', 'Мої хвилі', () => { sect = 'waves'; renderTabs(); setMode('mine'); }],
     ['🔖', 'Закладки', () => { sect = 'posts'; renderTabs(); setMode('bm'); }],
     ['✍️', 'Новий пост (студія)', () => { location.href = 'hive-post.html'; }],
@@ -1225,8 +1244,11 @@ function renderMenuItems(rew) {
       if (key) { await Sec.lockNow(); key = null; msg('Заблоковано. Наступного разу знадобиться пароль.'); }
       else unlockFlow();
     }],
-    ['🔑', 'Змінити акаунт або ключ', () => { $('#u').value = me; $('#login').classList.add('open'); }],
-    ['🚪', 'Вийти й видалити ключ', () => { if (confirm('Видалити ключ з цього пристрою й вийти?')) { Sec.clear(); location.reload(); } }, '', true]
+    ...Sec.accounts().filter(u => u !== me).map(u => ['🔁', 'Перемкнутися на @' + u, () => { Sec.setActive(u); location.reload(); }]),
+    ['➕', 'Додати акаунт', () => { $('#u').value = ''; $('#k').value = ''; $('#lerr').textContent = ''; $('#login').classList.add('open'); }],
+    ['🔑', 'Змінити ключ цього акаунта', () => { $('#u').value = me; $('#k').value = ''; $('#lerr').textContent = ''; $('#login').classList.add('open'); }],
+    ['🚪', 'Вийти з @' + me, () => { if (confirm('Видалити ключ акаунта @' + me + ' з цього пристрою й вийти?')) { Sec.remove(me); location.reload(); } }, '', true],
+    ...(Sec.accounts().length > 1 ? [['🚪', 'Вийти з усіх акаунтів', () => { if (confirm('Видалити ключі всіх акаунтів з цього пристрою?')) { Sec.clear(); location.reload(); } }, '', true]] : [])
   ];
   const box = $('#mlist'); box.innerHTML = '';
   items.forEach(([ic, label, fn, badge, danger]) => {
