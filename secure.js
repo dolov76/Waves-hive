@@ -1,9 +1,26 @@
-/* Захищене сховище posting key: шифрування паролем (PBKDF2 + AES-GCM), ключ у відкритому вигляді не зберігається. */
+/* Захищене сховище posting key для кількох акаунтів: шифрування паролем (PBKDF2 + AES-GCM), ключ у відкритому вигляді не зберігається. */
 const Sec = (() => {
-  const K = 'hive_vault', enc = new TextEncoder(), dec = new TextDecoder();
+  const enc = new TextEncoder(), dec = new TextDecoder();
   const b64 = a => btoa(String.fromCharCode(...new Uint8Array(a)));
   const unb = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-  const read = () => { try { return JSON.parse(localStorage.getItem(K)); } catch (e) { return null; } };
+  const jget = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+  const VK = u => 'hive_vault_' + u, DK = u => 'hive_dev_' + u;
+
+  /* міграція зі старого формату з одним акаунтом */
+  (function migrate() {
+    try {
+      const old = jget('hive_vault', null);
+      if (old && old.u) {
+        localStorage.setItem(VK(old.u), JSON.stringify(old)); localStorage.removeItem('hive_vault');
+        const l = jget('hive_accts', []); if (!l.includes(old.u)) { l.push(old.u); localStorage.setItem('hive_accts', JSON.stringify(l)); }
+        if (!localStorage.getItem('hive_active')) localStorage.setItem('hive_active', old.u);
+        const dv = jget('hive_dev', null); if (dv) { localStorage.setItem(DK(old.u), JSON.stringify(dv)); localStorage.removeItem('hive_dev'); }
+      }
+    } catch (e) {}
+  })();
+  const accounts = () => jget('hive_accts', []).filter(u => localStorage.getItem(VK(u)));
+  const active = () => { const a = localStorage.getItem('hive_active'), l = accounts(); return l.includes(a) ? a : (l[0] || ''); };
+  const read = () => jget(VK(active()), null);
 
   const st = document.createElement('style');
   st.textContent = `.sec-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -22,43 +39,61 @@ const Sec = (() => {
     const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
+  /* сеанс: ключ живе в sessionStorage лише поки відкрита вкладка, щоб не питати пароль між сторінками */
+  const sess = () => { try { return JSON.parse(sessionStorage.getItem('hive_sess')); } catch (e) { return null; } };
+  const cacheSet = (user, wif) => { try { sessionStorage.setItem('hive_sess', JSON.stringify({ user, wif })); } catch (e) {} };
+  const cacheDrop = () => { try { sessionStorage.removeItem('hive_sess'); } catch (e) {} };
+
   async function save(user, wif, pw) {
     if (!(window.crypto && crypto.subtle)) throw new Error('Шифрування недоступне в цьому браузері або на цій адресі (потрібен https).');
     const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await derive(pw, salt), enc.encode(wif));
-    localStorage.setItem(K, JSON.stringify({ u: user, s: b64(salt), i: b64(iv), c: b64(ct) }));
+    localStorage.setItem(VK(user), JSON.stringify({ u: user, s: b64(salt), i: b64(iv), c: b64(ct) }));
+    const l = jget('hive_accts', []); if (!l.includes(user)) { l.push(user); localStorage.setItem('hive_accts', JSON.stringify(l)); }
+    localStorage.setItem('hive_active', user); localStorage.setItem('ht_u', user);
     ['ht_k', 'hp_k'].forEach(x => localStorage.removeItem(x));
-    localStorage.setItem('ht_u', user);
     cacheSet(user, wif);
   }
   async function open(pw) {
     const v = read(), pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb(v.i) }, await derive(pw, unb(v.s)), unb(v.c));
     return { user: v.u, wif: dec.decode(pt) };
   }
-  /* сеанс: ключ живе в sessionStorage лише поки відкрита вкладка, щоб не питати пароль між сторінками */
-  const cacheSet = (user, wif) => { try { sessionStorage.setItem('hive_sess', JSON.stringify({ user, wif })); } catch (e) {} };
-  const cacheDrop = () => { try { sessionStorage.removeItem('hive_sess'); } catch (e) {} };
+
   /* «запам'ятати на цьому пристрої»: ключ шифрується неекспортованим ключем WebCrypto в IndexedDB, пароль не потрібен до закінчення терміну */
   const DB = () => new Promise((res, rej) => { const r = indexedDB.open('hive_sec', 1); r.onupgradeneeded = () => r.result.createObjectStore('k'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
   const idb = async (mode, fn) => { const db = await DB(); return new Promise((res, rej) => { const tx = db.transaction('k', mode), rq = fn(tx.objectStore('k')); tx.oncomplete = () => { db.close(); res(rq && rq.result); }; tx.onerror = () => rej(tx.error); }); };
   async function rememberSave(user, wif, days) {
     const dk = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     const iv = crypto.getRandomValues(new Uint8Array(12)), ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, dk, enc.encode(wif));
-    await idb('readwrite', st => st.put(dk, 'devkey'));
-    localStorage.setItem('hive_dev', JSON.stringify({ u: user, i: b64(iv), c: b64(ct), exp: Date.now() + days * 86400000 }));
+    await idb('readwrite', s => s.put(dk, 'devkey_' + user));
+    localStorage.setItem(DK(user), JSON.stringify({ u: user, i: b64(iv), c: b64(ct), exp: Date.now() + days * 86400000 }));
   }
-  async function rememberClear() { localStorage.removeItem('hive_dev'); try { await idb('readwrite', st => st.delete('devkey')); } catch (e) {} }
+  async function rememberClear(u) { u = u || active(); localStorage.removeItem(DK(u)); try { await idb('readwrite', s => s.delete('devkey_' + u)); } catch (e) {} }
   async function rememberOpen() {
-    let v; try { v = JSON.parse(localStorage.getItem('hive_dev')); } catch (e) { return null; }
-    if (!v) return null;
-    if (Date.now() > v.exp) { await rememberClear(); return null; }
+    const u = active(), v = jget(DK(u), null); if (!v) return null;
+    if (Date.now() > v.exp) { await rememberClear(u); return null; }
     try {
-      const dk = await idb('readonly', st => st.get('devkey')); if (!dk) return null;
-      return { user: v.u, wif: dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb(v.i) }, dk, unb(v.c))) };
+      let dk = await idb('readonly', s => s.get('devkey_' + u));
+      if (!dk) { dk = await idb('readonly', s => s.get('devkey')); if (dk) await idb('readwrite', s => s.put(dk, 'devkey_' + u)); }   // ключ зі старого формату
+      if (!dk) return null;
+      return { user: v.u || u, wif: dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb(v.i) }, dk, unb(v.c))) };
     } catch (e) { return null; }
   }
+
+  /* вихід з одного акаунта або з усіх */
+  function remove(u) {
+    localStorage.removeItem(VK(u)); localStorage.removeItem(DK(u));
+    idb('readwrite', s => s.delete('devkey_' + u)).catch(() => {});
+    const l = jget('hive_accts', []).filter(x => x !== u); localStorage.setItem('hive_accts', JSON.stringify(l));
+    const s = sess(); if (s && s.user === u) cacheDrop();
+    const next = l.find(x => localStorage.getItem(VK(x))) || '';
+    if (next) { localStorage.setItem('hive_active', next); localStorage.setItem('ht_u', next); }
+    else { ['hive_active', 'ht_u', 'hp_u', 'ht_k', 'hp_k'].forEach(x => localStorage.removeItem(x)); }
+    return next;
+  }
   const clear = () => {
-    ['hive_vault', 'hive_dev', 'ht_k', 'hp_k', 'ht_u', 'hp_u'].forEach(x => localStorage.removeItem(x));
+    Object.keys(localStorage).filter(k => k.startsWith('hive_vault') || k.startsWith('hive_dev')).forEach(k => localStorage.removeItem(k));
+    ['hive_accts', 'hive_active', 'ht_k', 'hp_k', 'ht_u', 'hp_u'].forEach(x => localStorage.removeItem(x));
     cacheDrop(); try { indexedDB.deleteDatabase('hive_sec'); } catch (e) {}
   };
   const lockMin = () => { const v = parseInt(localStorage.getItem('hive_lock_min'), 10); return isNaN(v) ? 30 : v; };
@@ -91,7 +126,8 @@ const Sec = (() => {
   }
 
   return {
-    has: () => !!read(), user: () => (read() || {}).u || '', save, clear,
+    has: () => !!read(), user: active, accounts, setActive(u) { if (accounts().includes(u)) { localStorage.setItem('hive_active', u); localStorage.setItem('ht_u', u); cacheDrop(); } },
+    save, clear, remove,
     async verify(client, user, wif) {
       let pub; try { pub = dhive.PrivateKey.fromString(wif).createPublic().toString(); } catch (e) { return { ok: false, msg: 'Невірний формат ключа.' }; }
       const [a] = await client.database.getAccounts([user]);
@@ -104,7 +140,9 @@ const Sec = (() => {
       return { ok: true };
     },
     unlockUI(note) {
-      return ask({ title: 'Розблокувати ключ', text: note || 'Введіть пароль, щоб користуватися збереженим posting key.', fields: [{ id: 'pw', ph: 'Пароль' }, { id: 'rem', type: 'check', label: 'Не питати пароль на цьому пристрої' }, { id: 'days', type: 'select', options: DAYS }],
+      const u = active();
+      return ask({ title: 'Розблокувати ключ', text: note || ('Введіть пароль, щоб користуватися збереженим posting key' + (u ? ' акаунта @' + u : '') + '.'),
+        fields: [{ id: 'pw', ph: 'Пароль' }, { id: 'rem', type: 'check', label: 'Не питати пароль на цьому пристрої' }, { id: 'days', type: 'select', options: DAYS }],
         ok: 'Розблокувати', cancel: 'Пізніше',
         onOk: async v => {
           let r; try { r = await open(v.pw); } catch (e) { throw new Error('Невірний пароль.'); }
@@ -112,7 +150,7 @@ const Sec = (() => {
           if (v.rem) { try { await rememberSave(r.user, r.wif, +v.days); } catch (e) {} }
           return r;
         },
-        extra: [{ t: 'Забув пароль', fn: close => { if (confirm('Видалити збережений ключ з цього пристрою? Його можна буде ввести знову.')) { clear(); close(null); } } }] });
+        extra: [{ t: 'Забув пароль', fn: close => { if (confirm('Видалити збережений ключ акаунта @' + u + ' з цього пристрою? Його можна буде ввести знову.')) { remove(u); close(null); location.reload(); } } }] });
     },
     setupUI(user, wif) {
       return ask({ title: 'Захистіть ключ паролем', text: 'Ключ буде зашифровано й збережено лише на цьому пристрої. Забутий пароль відновити неможливо, доведеться ввести ключ знову.',
@@ -143,10 +181,11 @@ const Sec = (() => {
           await rememberSave(r.user, r.wif, +v.days); return true;
         } });
     },
-    deviceExp() { try { const v = JSON.parse(localStorage.getItem('hive_dev')); return v && v.exp > Date.now() ? v.exp : 0; } catch (e) { return 0; } },
-    forgetDevice: rememberClear,
+    deviceExp() { const v = jget(DK(active()), null); return v && v.exp > Date.now() ? v.exp : 0; },
+    forgetDevice: () => rememberClear(),
     async autoUnlock() {
-      try { const s = JSON.parse(sessionStorage.getItem('hive_sess')); if (s && s.user && s.wif) return s; } catch (e) {}
+      const s = sess(), u = active();
+      if (s && s.user && s.wif && s.user === u) return s;
       const r = await rememberOpen(); if (r) cacheSet(r.user, r.wif); return r;
     },
     lockNow() { cacheDrop(); return rememberClear(); },
