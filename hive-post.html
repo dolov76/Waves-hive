@@ -788,19 +788,26 @@ function setEditUI(on) {
   document.querySelectorAll('#cq,#cfind,#cmine,#comm,#pay,#addben,.ben input,.ben button').forEach(x => { x.disabled = on; });
   $('#send').textContent = on ? 'Зберегти зміни' : 'Опублікувати';
 }
-$('#editbtn').onclick = async () => {
-  if (!curPost) return;
+async function startEdit(author, permlink) {
   try {
-    const p = await rpc('bridge', 'get_post', { author: curPost.author, permlink: curPost.permlink });
+    const p = await rpc('bridge', 'get_post', { author, permlink });
     if (!p) throw new Error('пост не знайдено');
+    const who2 = $('#user').value.trim().replace(/^@/, '').toLowerCase();
+    if (who2 && p.author !== who2) throw new Error('Можна редагувати лише свої пости.');
     const jm = typeof p.json_metadata === 'string' ? JSON.parse(p.json_metadata || '{}') : (p.json_metadata || {});
     const parent = p.category || (jm.tags && jm.tags[0]) || 'hive';
     editing = { permlink: p.permlink, parent };
     $('#title').value = p.title || ''; $('#body').value = p.body || ''; $('#tags').value = (jm.tags || []).filter(x => x !== parent).join(' ');
     $('#edittxt').textContent = 'Редагування: ' + (p.title || p.permlink);
     $('#title').oninput(); $('#body').oninput(); setEditUI(true); show('t1'); window.scrollTo(0, 0);
-  } catch (e) { say($('#cstatus'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); }
-};
+  } catch (e) { say($('#cstatus'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); say($('#status'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); }
+}
+$('#editbtn').onclick = () => { if (curPost) startEdit(curPost.author, curPost.permlink); };
+(() => {
+  const m = new URLSearchParams(location.search).get('edit'); if (!m) return;
+  const [a, pl] = m.split('/'); history.replaceState(null, '', location.pathname);
+  if (a && pl) startEdit(a, pl);
+})();
 $('#editcancel').onclick = () => {
   editing = null; setEditUI(false); $('#title').value = ''; $('#body').value = ''; $('#title').oninput(); $('#body').oninput();
 };

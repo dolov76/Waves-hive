@@ -192,6 +192,12 @@
   <div class="sm" id="sver" style="margin-top:8px"></div>
 </div></div>
 
+<div class="sheet" id="editsh"><div>
+  <div class="top"><button data-close>Скасувати</button><b>Редагування</b><button class="p" id="editsave">Зберегти</button></div>
+  <textarea id="edtext" style="min-height:240px;margin:10px 0" placeholder="Текст"></textarea>
+  <div class="sm err" id="ederr" style="min-height:1.3em"></div>
+</div></div>
+
 <div class="sheet" id="diag"><div>
   <div class="top"><button data-close>Закрити</button><b>Діагностика</b><button class="p" id="dgo">Запустити</button></div>
   <pre id="dg" style="white-space:pre-wrap;font-size:12px;margin:10px 0">Натисніть «Запустити». Звіт не містить ключів.</pre>
@@ -306,7 +312,7 @@ function card(p, line) {
     <div class="c"><div class="meta"><b>${p.author}</b><span>${ago(p.created)}</span></div>
     <div class="body">${md(p.body)}</div>
     <div class="act"><button class="lk ${liked ? 'on' : ''}">${ICON_H}<span>${p.net_votes ?? (p.active_votes || []).length}</span></button>
-    <button class="rp">${ICON_C}<span>${p.children}</span></button><button class="bm ${isBm(p) ? 'on' : ''}" aria-label="Закладка">${ICON_B}</button></div><div class="slot"></div></div>`;
+    <button class="rp">${ICON_C}<span>${p.children}</span></button>${p.author === me ? '<button class="ed" aria-label="Редагувати">✏️</button>' : ''}<button class="bm ${isBm(p) ? 'on' : ''}" aria-label="Закладка">${ICON_B}</button></div><div class="slot"></div></div>`;
   if (!line) el.querySelector('.av i').remove();
   el.querySelector('.lk').onclick = e => vote(p, e.currentTarget);
   linkTags(el.querySelector('.body'));
@@ -319,6 +325,7 @@ function card(p, line) {
   if (line) el.querySelector('.body').onclick = e => { if (!e.target.closest('a')) openWave(p); };
   el.querySelector('.rp').onclick = () => toggleThread(p, el.querySelector('.slot'));
   el.querySelector('.bm').onclick = e => toggleBm(p, e.currentTarget);
+  { const eb = el.querySelector('.ed'); if (eb) eb.onclick = () => editItem(p, el); }
   { const goP = () => openProfile(p.author); el.querySelector('.meta b').onclick = goP; el.querySelector('.av img').onclick = goP; }
   return el;
 }
@@ -1186,6 +1193,37 @@ Diag.extras.push(['Рендер постів (PeakD/Ecency)', () => new Promise(
     else rej(new Error('завантажилось ' + ok + ' з ' + imgs.length + '; не відкрились: ' + bad.join(', ')));
   }, 7000);
 })]);
+
+/* ---- редагування своїх постів, хвиль і коментарів ---- */
+let editCtx = null;
+async function editItem(p, el) {
+  if (!me || !key) return needLogin();
+  const isRoot = p.depth === 0 || p.parent_author === '' || !!p.title;
+  if (isRoot) { location.href = 'hive-post.html?edit=' + encodeURIComponent(p.author + '/' + p.permlink); return; }
+  $('#ederr').textContent = ''; $('#edtext').value = 'Завантаження…'; $('#edtext').disabled = true;
+  const sheet = $('#editsh'); sheet.classList.add('open'); bump(sheet);
+  try {
+    const c = await rpc('condenser_api', 'get_content', [p.author, p.permlink]);
+    if (!c || !c.permlink) throw new Error('запис не знайдено');
+    editCtx = { p, el, c }; $('#edtext').value = c.body || '';
+  } catch (e) { $('#ederr').textContent = 'Не вдалося відкрити: ' + (e.message || e); $('#edtext').value = ''; }
+  $('#edtext').disabled = false;
+}
+$('#editsave').onclick = async () => {
+  if (!editCtx) return;
+  const t = $('#edtext').value.trim(), c = editCtx.c;
+  if (!t) { $('#ederr').textContent = 'Текст не може бути порожнім.'; return; }
+  if (t === (c.body || '').trim()) { $('#ederr').textContent = 'Текст не змінився.'; return; }
+  if (!key) return needLogin();
+  const btn = $('#editsave'); btn.disabled = true; $('#ederr').textContent = '';
+  try {
+    await client.broadcast.comment({ parent_author: c.parent_author, parent_permlink: c.parent_permlink, author: me, permlink: c.permlink,
+      title: c.title || '', body: t, json_metadata: c.json_metadata || '{}' }, key);
+    editCtx.p.body = t; const b = editCtx.el.querySelector('.body'); if (b) { b.innerHTML = md(t); linkTags(b); }
+    $('#editsh').classList.remove('open'); msg('Зміни збережено.'); editCtx = null;
+  } catch (e) { $('#ederr').textContent = 'Не вдалося зберегти: ' + (e.message || e); }
+  btn.disabled = false;
+};
 
 /* ---- резервні копії ---- */
 async function renderBackup() { $('#bkinfo').textContent = await Backup.info(); }
