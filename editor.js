@@ -11,9 +11,11 @@ const Editor = (() => {
   .ed-row button,.ed-skip{flex:none;background:#26262a;color:#eee;border:0;border-radius:16px;padding:6px 13px;font:inherit}
   .ed-row button.on{background:#eee;color:#111}.ed-skip{width:100%;margin-top:10px;background:none;border:1px solid #555;border-radius:10px;padding:9px}
   .ed-tools label{display:block;font-size:13px;color:#aaa;margin-top:6px}.ed-tools input[type=range]{width:100%;accent-color:#ff5470}
+  .ed-apply{display:flex;gap:8px;align-items:center;font-size:13px;color:#aaa;margin-top:10px}.ed-apply input{width:auto}
   .ed-wm{width:100%;box-sizing:border-box;margin-top:8px;padding:9px;font:inherit;background:#1d1d20;color:#eee;border:1px solid #444;border-radius:8px}`;
   document.head.append(st);
 
+  let preset = null;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const FILTERS = { none: '', bw: 'grayscale(1)', warm: 'sepia(.25) saturate(1.15)', drama: 'contrast(1.2) saturate(1.2)' };
 
@@ -42,7 +44,7 @@ const Editor = (() => {
   function edit(file, label) {
     return new Promise(async res => {
       let img; try { img = await createImageBitmap(file); } catch (e) { return res(file); }
-      const S = { rot: 0, flip: false, ar: 0, zoom: 1, ox: 0, oy: 0, b: 1, c: 1, s: 1, f: 'none', wm: '' };
+      const S = Object.assign({ rot: 0, flip: false, ar: 0, zoom: 1, ox: 0, oy: 0, b: 1, c: 1, s: 1, f: 'none', wm: '' }, preset || {});
       const ov = document.createElement('div'); ov.className = 'ed';
       ov.innerHTML = `<div class="ed-top"><button data-a="cancel">Скасувати</button><b></b><button data-a="done" class="ed-p">Готово</button></div>
         <div class="ed-stage"><canvas></canvas></div>
@@ -55,9 +57,13 @@ const Editor = (() => {
           <label>Насиченість<input type="range" data-k="s" min="0" max="2" step="0.01" value="1"></label>
           <label>Масштаб (тягніть фото, щоб змінити кадр)<input type="range" data-k="zoom" min="1" max="3" step="0.01" value="1"></label>
           <input class="ed-wm" placeholder="Підпис на фото (необов'язково)">
+          <label class="ed-apply"><input type="checkbox" class="ed-ap"> Застосувати світло, колір, фільтр і підпис до наступних фото серії</label>
           <button data-a="asis" class="ed-skip">Завантажити без змін</button>
         </div>`;
       ov.querySelector('b').textContent = 'Фото ' + (label || '');
+      ov.querySelectorAll('[data-k]').forEach(i => { i.value = S[i.dataset.k]; });
+      ov.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x.dataset.f === S.f));
+      ov.querySelector('.ed-wm').value = S.wm || ''; ov.querySelector('.ed-ap').checked = !!preset;
       const cv = ov.querySelector('canvas');
       let raf = 0; const render = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => draw(cv, img, S, 900)); };
       const done = v => { cancelAnimationFrame(raf); ov.remove(); if (img.close) img.close(); res(v); };
@@ -67,6 +73,7 @@ const Editor = (() => {
         if (b.dataset.a === 'asis') return done(file);
         if (b.dataset.a === 'done') {
           const out = document.createElement('canvas'); draw(out, img, S, Math.min(2048, Math.max(img.width, img.height)));
+          preset = ov.querySelector('.ed-ap').checked ? { b: S.b, c: S.c, s: S.s, f: S.f, wm: S.wm } : null;
           return out.toBlob(bl => done(bl || file), 'image/jpeg', 0.9);
         }
         if (b.dataset.a === 'rl') { S.rot = (S.rot + 3) % 4; S.ox = S.oy = 0; }
@@ -88,5 +95,5 @@ const Editor = (() => {
       document.body.append(ov); render();
     });
   }
-  return { edit };
+  return { edit, reset() { preset = null; } };
 })();

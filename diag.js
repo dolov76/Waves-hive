@@ -1,5 +1,5 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
-const APP_VERSION = '2026.11.12-10';
+const APP_VERSION = '2026.11.17-1';
 const Diag = (() => {
   const now = () => performance.now();
   const KEY = 'hive_errlog', extras = [];
@@ -60,6 +60,14 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
     });
 
     const NODES = ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network'];
+    await S('Файли застосунку', async () => {
+      const bad = [];
+      if (typeof Sec === 'undefined' || !Sec.accounts) bad.push('secure.js');
+      if (typeof Editor === 'undefined' || !Editor.reset) bad.push('editor.js');
+      if (typeof Backup === 'undefined' || !Backup.exportFile) bad.push('backup.js');
+      if (bad.length) throw new Error('застарілі або відсутні: ' + bad.join(', ') + ' (завантажте їх на GitHub)');
+      return 'усі файли актуальні';
+    });
     for (const u of NODES) {
       await S('Вузол ' + u.replace('https://', ''), async () => {
         const g = await new dhive.Client([u], { timeout: 8000 }).database.getDynamicGlobalProperties();

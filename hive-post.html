@@ -269,7 +269,7 @@ async function uploadImage(file, w) {
   const j = await r.json(); if (!j.url) throw new Error('немає посилання у відповіді'); return j.url;
 }
 async function addPhotos(fl, w, pos, end) {
-  Editor.reset();
+  if (Editor.reset) Editor.reset();
   const ta = $('#body');
   for (let i = 0; i < fl.length; i++) {
     try {
@@ -300,7 +300,7 @@ async function fillCommunities(q) {
   const sel = $('#comm'); let list = [];
   try {
     if (q) list = ((await rpc('bridge', 'list_communities', { query: q, limit: 15, sort: 'rank' })) || []).map(c => [c.name, c.title]);
-    else { const a = who().author; list = ((await rpc('bridge', 'list_subscriptions', { account: a }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: a })).catch(() => rpc('bridge', 'list_subscriptions', { account: a, observer: a }))) || []).map(c => [c[0], c[1]]); }
+    else { const a = who().author; list = ((await rpc('bridge', 'list_all_subscriptions', { account: a }).catch(() => rpc('bridge', 'list_subscriptions', { account: a }))) || []).map(c => [c[0], c[1]]); }
   } catch (e) { return say($('#status'), 'Спільноти: ' + e.message, 'err'); }
   sel.innerHTML = ''; sel.append(new Option('Без спільноти', ''));
   list.forEach(([n, t]) => sel.append(new Option(`${t} (${n})`, n)));
@@ -748,7 +748,7 @@ $('#pbadd').onclick = () => {
   let w; try { w = who(); } catch (e) { return say($('#pbst'), e.message, 'err'); }
   const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
   f.onchange = async () => {
-    const fl = [...f.files]; Editor.reset();
+    const fl = [...f.files]; if (Editor.reset) Editor.reset();
     for (let i = 0; i < fl.length; i++) {
       try {
         const ed = await Editor.edit(fl[i], `${i + 1} з ${fl.length}`); if (!ed) continue;

@@ -520,7 +520,7 @@ async function loadSubs() {
   if (!subsLoaded) {
     if (me) {
       try {
-        const r = (await rpc('bridge', 'list_subscriptions', { account: me }).catch(() => rpc('bridge', 'list_all_subscriptions', { account: me })).catch(() => rpc('bridge', 'list_subscriptions', { account: me, observer: me }))) || [];
+        const r = (await rpc('bridge', 'list_all_subscriptions', { account: me }).catch(() => rpc('bridge', 'list_subscriptions', { account: me }))) || [];
         setCommOptions(r.map(c => [c[0], c[1]])); subsLoaded = true; subsErr = '';
       } catch (e) { subsErr = e.message || String(e); setCommOptions([]); }
     } else setCommOptions([]);
@@ -886,7 +886,7 @@ async function uploadImage(file) {
 }
 
 async function attach(ta, files, a, b, st) {
-  Editor.reset();
+  if (Editor.reset) Editor.reset();
   let pos = a, end = b;
   for (let i = 0; i < files.length; i++) {
     st.textContent = `Завантажую ${i + 1} з ${files.length}…`; st.className = '';
