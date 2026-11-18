@@ -99,7 +99,6 @@
   #acc { display:flex; align-items:center; } .accav { width:22px; height:22px; border-radius:50%; margin-right:6px; background:var(--soft); object-fit:cover; }
     .mi { display:flex; align-items:center; gap:12px; width:100%; background:none; border:0; border-bottom:1px solid var(--line); color:var(--fg); font:inherit; padding:13px 4px; text-align:left; border-radius:0; }
   .mi .bd { margin-left:auto; background:var(--like); color:#fff; border-radius:10px; font-size:11px; padding:1px 8px; } .mi.danger { color:var(--like); }
-  .act .ed { font-size:13px; }
   #msg { padding:10px 16px; color:var(--mut); font-size:13px; } .err { color:var(--like); }
 </style>
 </head>
@@ -191,19 +190,6 @@
   <div class="sh">Застосунок</div>
   <button class="mi" id="sclear" type="button"><span>🧹</span><span>Очистити кеш і оновити</span></button>
   <div class="sm" id="sver" style="margin-top:8px"></div>
-</div></div>
-
-<div class="sheet" id="editsh"><div>
-  <div class="top"><button data-close>Скасувати</button><b id="edhead">Редагування</b><button class="p" id="editsave">Зберегти</button></div>
-  <input id="edtitle" placeholder="Заголовок" style="margin-top:10px" hidden>
-  <textarea id="edtext" style="min-height:240px;margin:10px 0" placeholder="Текст"></textarea>
-  <input id="edtags" placeholder="Теги через пробіл" hidden>
-  <div style="display:flex;gap:8px;margin:10px 0;align-items:center">
-    <button id="edphoto" type="button" style="background:var(--soft);color:var(--fg);border:0;border-radius:18px;padding:8px 14px;font:inherit">📷 Додати фото</button>
-    <button id="eddel" type="button" style="margin-left:auto;background:none;border:0;color:var(--like);font:inherit">🗑 Видалити</button>
-  </div>
-  <div class="sm err" id="ederr" style="min-height:1.3em"></div>
-  <div class="sm">Редагування змінює текст на блокчейні. Попередні версії лишаються в історії Hive.</div>
 </div></div>
 
 <div class="sheet" id="diag"><div>
@@ -320,7 +306,7 @@ function card(p, line) {
     <div class="c"><div class="meta"><b>${p.author}</b><span>${ago(p.created)}</span></div>
     <div class="body">${md(p.body)}</div>
     <div class="act"><button class="lk ${liked ? 'on' : ''}">${ICON_H}<span>${p.net_votes ?? (p.active_votes || []).length}</span></button>
-    <button class="rp">${ICON_C}<span>${p.children}</span></button>${p.author === me ? '<button class="ed">Редагувати</button>' : ''}<button class="bm ${isBm(p) ? 'on' : ''}" aria-label="Закладка">${ICON_B}</button></div><div class="slot"></div></div>`;
+    <button class="rp">${ICON_C}<span>${p.children}</span></button><button class="bm ${isBm(p) ? 'on' : ''}" aria-label="Закладка">${ICON_B}</button></div><div class="slot"></div></div>`;
   if (!line) el.querySelector('.av i').remove();
   el.querySelector('.lk').onclick = e => vote(p, e.currentTarget);
   linkTags(el.querySelector('.body'));
@@ -333,7 +319,6 @@ function card(p, line) {
   if (line) el.querySelector('.body').onclick = e => { if (!e.target.closest('a')) openWave(p); };
   el.querySelector('.rp').onclick = () => toggleThread(p, el.querySelector('.slot'));
   el.querySelector('.bm').onclick = e => toggleBm(p, e.currentTarget);
-  { const eb = el.querySelector('.ed'); if (eb) eb.onclick = () => editItem(p, el); }
   { const goP = () => openProfile(p.author); el.querySelector('.meta b').onclick = goP; el.querySelector('.av img').onclick = goP; }
   return el;
 }
@@ -1201,74 +1186,6 @@ Diag.extras.push(['Рендер постів (PeakD/Ecency)', () => new Promise(
     else rej(new Error('завантажилось ' + ok + ' з ' + imgs.length + '; не відкрились: ' + bad.join(', ')));
   }, 7000);
 })]);
-
-/* ---- редагування своїх постів, хвиль і коментарів ---- */
-let editCtx = null;
-const edErr = t => { $('#ederr').textContent = t || ''; };
-const imagesIn = body => {
-  const out = [], add = u => { if (/^https?:\/\//i.test(u) && !out.includes(u)) out.push(u); };
-  for (const m of body.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)/g)) add(m[1]);
-  for (const m of body.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) add(m[1]);
-  return out.slice(0, 10);
-};
-async function editItem(p, el) {
-  if (!me || !key) return needLogin();
-  const sheet = $('#editsh'); sheet.classList.add('open'); bump(sheet);
-  editCtx = null; edErr(''); $('#edtext').value = 'Завантаження…'; $('#edtext').disabled = true;
-  try {
-    const c = await rpc('condenser_api', 'get_content', [p.author, p.permlink]);
-    if (!c || !c.permlink) throw new Error('запис не знайдено');
-    const root = !c.parent_author;
-    let jm = {}; try { jm = JSON.parse(c.json_metadata || '{}') || {}; } catch (e) {}
-    editCtx = { p, el, c, root, jm };
-    $('#edhead').textContent = root ? 'Редагування поста' : 'Редагування';
-    $('#edtitle').hidden = !root; $('#edtags').hidden = !root;
-    $('#edtitle').value = c.title || ''; $('#edtext').value = c.body || '';
-    $('#edtags').value = (Array.isArray(jm.tags) ? jm.tags : []).filter(t => t !== c.parent_permlink).join(' ');
-  } catch (e) { edErr('Не вдалося відкрити: ' + (e.message || e)); $('#edtext').value = ''; }
-  $('#edtext').disabled = false;
-}
-$('#edphoto').onclick = () => pickPhotos($('#edtext'), $('#ederr'));
-$('#editsave').onclick = async () => {
-  if (!editCtx) return;
-  const { c, root, jm, p, el } = editCtx, t = $('#edtext').value.trim(), title = root ? $('#edtitle').value.trim() : (c.title || '');
-  if (!t) return edErr('Текст не може бути порожнім.');
-  if (root && !title) return edErr('Заголовок не може бути порожнім.');
-  let tags = null;
-  if (root) tags = [c.parent_permlink, ...$('#edtags').value.toLowerCase().split(/\s+/).filter(x => x && x !== c.parent_permlink)].slice(0, 10);
-  const sameTags = !root || tags.join(' ') === (Array.isArray(jm.tags) ? jm.tags : []).join(' ');
-  if (t === (c.body || '').trim() && title === (c.title || '') && sameTags) return edErr('Нічого не змінилось.');
-  if (!key) return needLogin();
-  const btn = $('#editsave'); btn.disabled = true; edErr('');
-  try {
-    let meta = c.json_metadata || '{}';
-    if (root) {
-      const m = Object.assign({}, jm), imgs = imagesIn(t), cover = Array.isArray(jm.image) ? jm.image[0] : '';
-      if (cover && imgs.includes(cover)) { imgs.splice(imgs.indexOf(cover), 1); imgs.unshift(cover); }
-      m.tags = tags; m.format = m.format || 'markdown'; if (imgs.length) m.image = imgs; else delete m.image;
-      meta = JSON.stringify(m);
-    }
-    await client.broadcast.comment({ parent_author: c.parent_author, parent_permlink: c.parent_permlink, author: me, permlink: c.permlink, title, body: t, json_metadata: meta }, key);
-    const b = el && el.querySelector('.body');
-    if (root) {
-      p.title = title; p._body = t;
-      p.body = (el && el.closest('#wv')) ? '## ' + title + '\n\n' + t : postLike(Object.assign({}, c, { title, body: t, json_metadata: meta, stats: p.stats, active_votes: p.active_votes, reblogged_by: p.reblogged_by })).body;
-    } else p.body = t;
-    if (b) { b.innerHTML = md(p.body); linkTags(b); }
-    $('#editsh').classList.remove('open'); msg('Зміни збережено. Інші копії запису в стрічці оновляться після перезавантаження.'); editCtx = null;
-  } catch (e) { edErr('Не вдалося зберегти: ' + (e.message || e)); }
-  btn.disabled = false;
-};
-$('#eddel').onclick = async () => {
-  if (!editCtx || !key) return;
-  if (!confirm('Видалити цей запис? Це можливо лише якщо в нього немає голосів, відповідей і виплат. Дію не можна скасувати.')) return;
-  try {
-    await client.broadcast.sendOperations([['delete_comment', { author: me, permlink: editCtx.c.permlink }]], key);
-    if (editCtx.el) editCtx.el.remove();
-    $('#editsh').classList.remove('open'); if (editCtx.el && editCtx.root) $('#wview').classList.remove('open');
-    msg('Запис видалено.'); editCtx = null;
-  } catch (e) { edErr('Не вдалося видалити: ' + (e.message || e)); }
-};
 
 /* ---- резервні копії ---- */
 async function renderBackup() { $('#bkinfo').textContent = await Backup.info(); }

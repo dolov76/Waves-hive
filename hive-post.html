@@ -237,8 +237,8 @@ try {
   if (!Sec.has()) $('#key').value = localStorage.getItem('hp_k') || localStorage.getItem('ht_k') || '';
   $('#title').value = localStorage.getItem('hp_t') || ''; $('#body').value = localStorage.getItem('hp_b') || '';
 } catch (e) {}
-$('#title').oninput = () => { try { if (editing) return; localStorage.setItem('hp_t', $('#title').value); } catch (e) {} };
-$('#body').oninput = () => { try { if (editing) return; localStorage.setItem('hp_b', $('#body').value); } catch (e) {} };
+$('#title').oninput = () => { try { localStorage.setItem('hp_t', $('#title').value); } catch (e) {} };
+$('#body').oninput = () => { try { localStorage.setItem('hp_b', $('#body').value); } catch (e) {} };
 
 const TABS = { t1: 'new', t2: 'com', t3: 'not', t4: 'sta' };
 function show(t) {
@@ -788,21 +788,19 @@ function setEditUI(on) {
   document.querySelectorAll('#cq,#cfind,#cmine,#comm,#pay,#addben,.ben input,.ben button').forEach(x => { x.disabled = on; });
   $('#send').textContent = on ? 'Зберегти зміни' : 'Опублікувати';
 }
-async function startEdit(author, permlink) {
+$('#editbtn').onclick = async () => {
+  if (!curPost) return;
   try {
-    const p = await rpc('bridge', 'get_post', { author, permlink });
+    const p = await rpc('bridge', 'get_post', { author: curPost.author, permlink: curPost.permlink });
     if (!p) throw new Error('пост не знайдено');
-    const who2 = $('#user').value.trim().replace(/^@/, '').toLowerCase();
-    if (who2 && p.author !== who2) throw new Error('Можна редагувати лише свої пости.');
     const jm = typeof p.json_metadata === 'string' ? JSON.parse(p.json_metadata || '{}') : (p.json_metadata || {});
     const parent = p.category || (jm.tags && jm.tags[0]) || 'hive';
     editing = { permlink: p.permlink, parent };
     $('#title').value = p.title || ''; $('#body').value = p.body || ''; $('#tags').value = (jm.tags || []).filter(x => x !== parent).join(' ');
     $('#edittxt').textContent = 'Редагування: ' + (p.title || p.permlink);
     $('#title').oninput(); $('#body').oninput(); setEditUI(true); show('t1'); window.scrollTo(0, 0);
-  } catch (e) { say($('#cstatus'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); say($('#status'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); }
-}
-$('#editbtn').onclick = () => { if (curPost) startEdit(curPost.author, curPost.permlink); };
+  } catch (e) { say($('#cstatus'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); }
+};
 
 $('#editcancel').onclick = () => {
   editing = null; setEditUI(false); $('#title').value = ''; $('#body').value = ''; $('#title').oninput(); $('#body').oninput();

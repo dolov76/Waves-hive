@@ -1,5 +1,5 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
-const APP_VERSION = '2026.11.17-3';
+const APP_VERSION = '2026.11.17-1';
 const Diag = (() => {
   const now = () => performance.now();
   const KEY = 'hive_errlog', extras = [];
