@@ -237,8 +237,8 @@ try {
   if (!Sec.has()) $('#key').value = localStorage.getItem('hp_k') || localStorage.getItem('ht_k') || '';
   $('#title').value = localStorage.getItem('hp_t') || ''; $('#body').value = localStorage.getItem('hp_b') || '';
 } catch (e) {}
-$('#title').oninput = () => { try { localStorage.setItem('hp_t', $('#title').value); } catch (e) {} };
-$('#body').oninput = () => { try { localStorage.setItem('hp_b', $('#body').value); } catch (e) {} };
+$('#title').oninput = () => { try { if (editing) return; localStorage.setItem('hp_t', $('#title').value); } catch (e) {} };
+$('#body').oninput = () => { try { if (editing) return; localStorage.setItem('hp_b', $('#body').value); } catch (e) {} };
 
 const TABS = { t1: 'new', t2: 'com', t3: 'not', t4: 'sta' };
 function show(t) {
@@ -803,11 +803,7 @@ async function startEdit(author, permlink) {
   } catch (e) { say($('#cstatus'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); say($('#status'), 'Не вдалося відкрити для редагування: ' + (e.message || e), 'err'); }
 }
 $('#editbtn').onclick = () => { if (curPost) startEdit(curPost.author, curPost.permlink); };
-(() => {
-  const m = new URLSearchParams(location.search).get('edit'); if (!m) return;
-  const [a, pl] = m.split('/'); history.replaceState(null, '', location.pathname);
-  if (a && pl) startEdit(a, pl);
-})();
+
 $('#editcancel').onclick = () => {
   editing = null; setEditUI(false); $('#title').value = ''; $('#body').value = ''; $('#title').oninput(); $('#body').oninput();
 };
