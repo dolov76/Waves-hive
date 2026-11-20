@@ -1,5 +1,5 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
-const APP_VERSION = '2026.11.17-1';
+const APP_VERSION = '2026.11.18-1';
 const Diag = (() => {
   const now = () => performance.now();
   const KEY = 'hive_errlog', extras = [];
@@ -65,6 +65,10 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
       if (typeof Sec === 'undefined' || !Sec.accounts) bad.push('secure.js');
       if (typeof Editor === 'undefined' || !Editor.reset) bad.push('editor.js');
       if (typeof Backup === 'undefined' || !Backup.exportFile) bad.push('backup.js');
+      if (typeof Theme === 'undefined') bad.push('util.js');
+      if (typeof rpc === 'undefined') bad.push('net.js');
+      if (typeof richify === 'undefined') bad.push('render.js');
+      if (typeof uploadImage === 'undefined') bad.push('media.js');
       if (bad.length) throw new Error('застарілі або відсутні: ' + bad.join(', ') + ' (завантажте їх на GitHub)');
       return 'усі файли актуальні';
     });

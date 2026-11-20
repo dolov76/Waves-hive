@@ -1,5 +1,5 @@
-const CACHE = 'hive-app-v7';
-const SHELL = ['./', './index.html', './hive-post.html', './secure.js', './diag.js', './editor.js', './backup.js', './manifest.json', './manifest-post.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './logo.png'];
+const CACHE = 'hive-app-v8';
+const SHELL = ['./', './index.html', './hive-post.html', './secure.js', './diag.js', './editor.js', './backup.js', './util.js', './net.js', './render.js', './media.js', './manifest.json', './manifest-post.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './logo.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(new Request(u, { cache: 'reload' })).catch(() => {})))).then(() => self.skipWaiting()));
 });
