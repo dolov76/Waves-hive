@@ -11,6 +11,15 @@ async function digest(b) {
   if (dhive.cryptoUtils && dhive.cryptoUtils.sha256) return dhive.cryptoUtils.sha256(b);
   return new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 }
+/* Копіює вибрані файли в пам'ять одразу після вибору: Android може «забути» доступ до оригіналу, поки ви редагуєте інше фото. */
+async function snapshotFiles(list, onErr) {
+  const out = [];
+  for (const f of list) {
+    try { out.push(new File([await f.arrayBuffer()], f.name, { type: f.type, lastModified: f.lastModified })); }
+    catch (e) { if (onErr) onErr(f.name || 'файл', e); }
+  }
+  return out;
+}
 /* w = { author, key }; у головному застосунку можна не передавати: тоді береться поточний me/key */
 async function uploadImage(file, w) {
   if (!w) w = { author: me, key };

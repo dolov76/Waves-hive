@@ -1,5 +1,5 @@
 /* Діагностика: по кроках перевіряє середовище, вузли Hive, стрічки, акаунт, фото й сервіси. Ключі у звіт не потрапляють. */
-const APP_VERSION = '2026.11.18-1';
+const APP_VERSION = '2026.11.20-1';
 const Diag = (() => {
   const now = () => performance.now();
   const KEY = 'hive_errlog', extras = [];
@@ -85,7 +85,7 @@ const proxyUrl = u => 'https://images.hive.blog/p/' + b58(new TextEncoder().enco
     for (const h of ['hive.flow', 'ecency.waves']) {
       await S('Контейнер хвиль ' + h, async () => {
         const r = await client.call('bridge', 'get_account_posts', { sort: 'posts', account: h, limit: 1 });
-        if (!r || !r[0]) throw new Error('постів не знайдено' + (h === 'hive.flow' ? ' (зараз не використовується, це нормально)' : ''));
+        if (!r || !r[0]) { if (h === 'hive.flow') return 'порожній (зараз не використовується, це нормально)'; throw new Error('постів не знайдено'); }
         return `${r[0].permlink}, відповідей ${r[0].children}, вік ${Math.round((Date.now() - new Date(r[0].created + 'Z')) / 3600000)} год`;
       });
     }

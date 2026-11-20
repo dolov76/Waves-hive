@@ -200,6 +200,7 @@
   <div class="top"><button data-close>Закрити</button><b>Діагностика</b><button class="p" id="dgo">Запустити</button></div>
   <pre id="dg" style="white-space:pre-wrap;font-size:12px;margin:10px 0">Натисніть «Запустити». Звіт не містить ключів.</pre>
   <button id="dgcopy" type="button" class="bk" style="width:100%">Копіювати звіт</button>
+  <button id="dgclr" type="button" class="bk" style="width:100%">Очистити журнал помилок</button>
 </div></div>
 
 <div class="sheet" id="login"><div>
@@ -505,7 +506,7 @@ async function fillCommunity() {
   busy = true; more.hidden = false; more.textContent = 'Завантаження…';
   let ok = false;
   try {
-    const [method, params] = postReq(); if (me) params.observer = me;
+    const [method, params] = postReq();
     if (cp.last) { params.start_author = cp.last.author; params.start_permlink = cp.last.permlink; }
     const page = (await rpc('bridge', method, params)) || [];
     if (page.length < 19) cp.done = true;
@@ -688,7 +689,7 @@ async function loadProfileBlog(kind) {
   const feed = $('#p' + k + 'feed'), more = $('#p' + k + 'more'); if (!feed || !more) return;
   s.busy = true; more.textContent = 'Завантаження…';
   try {
-    const params = { sort: k === 'blog' ? 'blog' : 'posts', account: a, limit: 20 }; if (me) params.observer = me;
+    const params = { sort: k === 'blog' ? 'blog' : 'posts', account: a, limit: 20 };
     if (s.last) { params.start_author = s.last.author; params.start_permlink = s.last.permlink; }
     const page = await acctPage(params);
     if (!pf || pf.account !== a) return;
@@ -814,7 +815,12 @@ function pickPhotos(ta, st) {
   const a = ta.selectionStart, b = ta.selectionEnd;
   const f = document.createElement('input');
   f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
-  f.onchange = () => { if (f.files.length) attach(ta, [...f.files], a, b, st); };
+  f.onchange = async () => {
+    if (!f.files.length) return;
+    st.textContent = 'Читаю файли…'; st.className = '';
+    const fl = await snapshotFiles([...f.files], n => { st.textContent = 'Не вдалося прочитати «' + n + '». Якщо фото в хмарі, збережіть його на пристрій.'; st.className = 'err'; });
+    if (fl.length) attach(ta, fl, a, b, st);
+  };
   f.click();
 }
 $('#pick').onclick = () => pickPhotos($('#text'), $('#up'));
@@ -1142,6 +1148,7 @@ $('#dgcopy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#dg').textContent); b.textContent = 'Скопійовано'; } catch (e) { b.textContent = 'Не вдалося: виділіть текст вручну'; }
   setTimeout(() => { b.textContent = 'Копіювати звіт'; }, 2500);
 };
+$('#dgclr').onclick = () => { Diag.clear(); $('#dg').textContent = 'Журнал помилок очищено.'; };
 
 /* ---- тема ---- */
 Theme.init('#101010');

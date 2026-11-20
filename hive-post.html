@@ -137,7 +137,7 @@
   <label for="k3s">API-ключ 3Speak (для завантаження відео)</label><input id="k3s" type="password" autocomplete="off" placeholder="Видає команда 3Speak">
   <p>Ключ зберігається лише в зашифрованому вигляді, під вашим паролем. Застосунок перевіряє, що це саме posting key.</p>
   <div class="row"><button id="vault" type="button">Зберегти ключ під паролем</button><button id="lock" type="button">Заблокувати</button></div>
-  <div class="row" style="margin-top:8px"><button id="dgo" type="button">Діагностика</button><button id="dgcopy" type="button">Копіювати звіт</button></div>
+  <div class="row" style="margin-top:8px"><button id="dgo" type="button">Діагностика</button><button id="dgcopy" type="button">Копіювати звіт</button><button id="dgclr" type="button">Очистити журнал</button></div>
   <pre id="dg" style="white-space:pre-wrap;font-size:12px"></pre>
   <p id="bkinfo" style="font-size:13px;color:var(--mut)"></p>
   <div class="row"><button id="bkexp" type="button">Експорт даних</button><button id="bkimp" type="button">Імпорт даних</button></div>
@@ -196,7 +196,12 @@ $('#pick').onclick = () => {
   let w; try { w = who(); } catch (e) { return say($('#up'), e.message, 'err'); }
   const ta = $('#body'), pos = ta.selectionStart, end = ta.selectionEnd;
   const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
-  f.onchange = () => addPhotos([...f.files], w, pos, end);
+  f.onchange = async () => {
+    if (!f.files.length) return;
+    say($('#up'), 'Читаю файли…');
+    const fl = await snapshotFiles([...f.files], n => say($('#up'), 'Не вдалося прочитати «' + n + '». Якщо фото в хмарі, збережіть його на пристрій.', 'err'));
+    if (fl.length) addPhotos(fl, w, pos, end);
+  };
   f.click();
 };
 $('#toggle').onclick = () => {
@@ -543,6 +548,7 @@ $('#dgcopy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#dg').textContent); b.textContent = 'Скопійовано'; } catch (e) { b.textContent = 'Не вдалося'; }
   setTimeout(() => { b.textContent = 'Копіювати звіт'; }, 2500);
 };
+$('#dgclr').onclick = () => { Diag.clear(); $('#dg').textContent = 'Журнал помилок очищено.'; };
 
 /* ---- тема ---- */
 Theme.init('#14171c');
@@ -595,7 +601,7 @@ $('#pbadd').onclick = () => {
   let w; try { w = who(); } catch (e) { return say($('#pbst'), e.message, 'err'); }
   const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
   f.onchange = async () => {
-    const fl = [...f.files]; if (Editor.reset) Editor.reset();
+    const fl = await snapshotFiles([...f.files], n => say($('#pbst'), 'Не вдалося прочитати «' + n + '». Якщо фото в хмарі, збережіть його на пристрій.', 'err')); if (Editor.reset) Editor.reset();
     for (let i = 0; i < fl.length; i++) {
       try {
         const ed = await Editor.edit(fl[i], `${i + 1} з ${fl.length}`); if (!ed) continue;
